@@ -24,7 +24,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    runs-on: windows-2025
+    runs-on: windows-2022
     environment: production
     env:
       PYTHONIOENCODING: utf-8
