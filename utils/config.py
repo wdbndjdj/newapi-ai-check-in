@@ -836,6 +836,25 @@ class AppConfig:
                 aliyun_captcha=False,
                 bypass_method=None,
             ),
+            "futurehub": ProviderConfig(
+                name="futurehub",
+                origin="https://api.futureppo.top",
+                login_path="/login",
+                status_path="/api/status",
+                auth_state_path="/api/oauth/state",
+                check_in_path="/api/user/checkin",
+                check_in_status=True,
+                user_info_path="/api/user/self",
+                topup_path="/api/user/topup",
+                get_cdk=None,
+                api_user_key="new-api-user",
+                github_client_id="Ov23liuf3EDERWtH3z8s",
+                github_auth_path="/api/oauth/github",
+                linuxdo_client_id="x13xeJDTGxzQW4yEzFsA5LqqJKv6msSG",
+                linuxdo_auth_path="/api/oauth/linuxdo",
+                aliyun_captcha=False,
+                bypass_method=None,
+            ),
         }
 
         # 尝试从环境变量加载自定义 providers
