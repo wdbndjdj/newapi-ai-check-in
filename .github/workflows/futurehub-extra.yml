@@ -33,6 +33,5 @@ jobs:
       - name: Check in extra Future Hub accounts
         env:
           ACCOUNTS: ${{ secrets.FUTUREHUB_EXTRA_ACCOUNTS }}
-          PROVIDERS: ${{ secrets.PROVIDERS }}
           DEBUG: 'false'
         run: uv run python -u main.py
