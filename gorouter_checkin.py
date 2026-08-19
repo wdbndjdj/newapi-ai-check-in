@@ -124,7 +124,7 @@ async def solve_turnstile_token() -> str:
         async with ClickSolver(
             framework=FrameworkType.CAMOUFOX,
             page=page,
-            max_attempts=5,
+            max_attempts=1,
             attempt_delay=3,
         ) as solver:
             await page.goto(f"{BASE_URL}/sign-in", wait_until="domcontentloaded", timeout=60_000)
@@ -147,10 +147,30 @@ async def solve_turnstile_token() -> str:
                 inputs = len(await page.query_selector_all('[name="cf-turnstile-response"]'))
                 frames = len(await page.query_selector_all("iframe"))
                 print(f"ACCOUNT={ACCOUNT_NAME} TURNSTILE_WIDGET inputs={inputs} iframes={frames}")
-                await solver.solve_captcha(
-                    captcha_container=page,
-                    captcha_type=CaptchaType.CLOUDFLARE_TURNSTILE,
-                )
+                try:
+                    await solver.solve_captcha(
+                        captcha_container=page,
+                        captcha_type=CaptchaType.CLOUDFLARE_TURNSTILE,
+                    )
+                except Exception:
+                    # Some Turnstile builds localize the iframe metadata that
+                    # playwright-captcha uses for detection. Click the visible
+                    # widget frame directly without reading its cross-origin
+                    # contents, then wait for the hidden response input.
+                    clicked = False
+                    for iframe in await page.query_selector_all("iframe"):
+                        box = await iframe.bounding_box()
+                        if box and box["width"] >= 100 and box["height"] >= 40:
+                            await page.mouse.click(
+                                box["x"] + min(32, box["width"] / 4),
+                                box["y"] + box["height"] / 2,
+                            )
+                            clicked = True
+                            break
+                    print(
+                        f"ACCOUNT={ACCOUNT_NAME} TURNSTILE_FALLBACK="
+                        f"{'CLICKED' if clicked else 'NO_VISIBLE_FRAME'}"
+                    )
                 for _ in range(30):
                     token = await read_token()
                     if token:
