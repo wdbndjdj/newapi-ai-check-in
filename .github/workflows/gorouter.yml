@@ -1,0 +1,40 @@
+name: GoRouter 自动签到
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # UTC 00:17 / 08:17 / 16:17 = 北京时间 08:17 / 16:17 / 00:17
+    - cron: '17 0,8,16 * * *'
+
+concurrency:
+  group: gorouter-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    name: 签到并核对结果
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    env:
+      GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_SYSTEM_ACCESS_TOKEN }}
+      GOROUTER_USER_ID: ${{ secrets.GOROUTER_USER_ID }}
+      GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_COOKIE_HEADER }}
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: 检查配置
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GOROUTER_SYSTEM_ACCESS_TOKEN:-}"
+          test -n "${GOROUTER_USER_ID:-}"
+          test -n "${GOROUTER_COOKIE_HEADER:-}"
+          echo "GoRouter secrets are configured"
+
+      - name: 执行 GoRouter 签到
+        run: python gorouter_checkin.py
