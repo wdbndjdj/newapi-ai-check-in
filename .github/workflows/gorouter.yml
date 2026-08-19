@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       force_turnstile_probe:
-        description: '即使今天已签到，也验证 Turnstile 与签到接口'
+        description: '即使今天已签到，也验证签到接口'
         required: false
         type: boolean
         default: false
@@ -21,27 +21,168 @@ permissions:
 
 jobs:
   checkin:
-    name: 签到并核对结果
+    name: 十二账号串行签到
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 12
+    timeout-minutes: 40
     env:
-      GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_SYSTEM_ACCESS_TOKEN }}
-      GOROUTER_USER_ID: ${{ secrets.GOROUTER_USER_ID }}
-      GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_COOKIE_HEADER }}
       GOROUTER_FORCE_POST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_turnstile_probe || false }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: 检查配置
+      - name: 安装运行环境
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          enable-cache: true
+
+      - name: 安装浏览器依赖
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GOROUTER_SYSTEM_ACCESS_TOKEN:-}"
-          test -n "${GOROUTER_USER_ID:-}"
-          test -n "${GOROUTER_COOKIE_HEADER:-}"
-          echo "GoRouter secrets are configured"
+          uv sync --frozen
+          uv run camoufox fetch
 
-      - name: 执行 GoRouter 签到
-        run: python gorouter_checkin.py
+      - name: gorouter-01
+        id: a01
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-01
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-02
+        id: a02
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-02
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_02_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_02_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_02_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-03
+        id: a03
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-03
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_03_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_03_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_03_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-04
+        id: a04
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-04
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_04_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_04_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_04_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-05
+        id: a05
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-05
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_05_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_05_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_05_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-06
+        id: a06
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-06
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_06_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_06_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_06_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-07
+        id: a07
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-07
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_07_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_07_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_07_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-08
+        id: a08
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-08
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_08_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_08_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_08_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-09
+        id: a09
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-09
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_09_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_09_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_09_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-10
+        id: a10
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-10
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_10_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_10_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_10_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-11
+        id: a11
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-11
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_11_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_11_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_11_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: gorouter-12
+        id: a12
+        continue-on-error: true
+        env:
+          GOROUTER_ACCOUNT_NAME: gorouter-12
+          GOROUTER_USER_ID: ${{ secrets.GOROUTER_12_USER_ID }}
+          GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_12_SYSTEM_ACCESS_TOKEN }}
+          GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_12_COOKIE_HEADER }}
+        run: xvfb-run -a uv run python gorouter_checkin.py
+
+      - name: 汇总十二账号结果
+        if: always()
+        shell: bash
+        run: |
+          outcomes=(
+            '${{ steps.a01.outcome }}' '${{ steps.a02.outcome }}'
+            '${{ steps.a03.outcome }}' '${{ steps.a04.outcome }}'
+            '${{ steps.a05.outcome }}' '${{ steps.a06.outcome }}'
+            '${{ steps.a07.outcome }}' '${{ steps.a08.outcome }}'
+            '${{ steps.a09.outcome }}' '${{ steps.a10.outcome }}'
+            '${{ steps.a11.outcome }}' '${{ steps.a12.outcome }}'
+          )
+          success=0
+          failed=0
+          for outcome in "${outcomes[@]}"; do
+            if [[ "$outcome" == "success" ]]; then
+              success=$((success + 1))
+            else
+              failed=$((failed + 1))
+            fi
+          done
+          echo "SUMMARY SUCCESS=${success}/12 FAILED=${failed}/12"
+          test "$failed" -eq 0
