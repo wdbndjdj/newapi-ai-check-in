@@ -28,6 +28,7 @@ jobs:
     env:
       GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_SYSTEM_ACCESS_TOKEN }}
       GOROUTER_USER_ID: ${{ secrets.GOROUTER_USER_ID }}
+      GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_COOKIE_HEADER }}
       GOROUTER_FORCE_POST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_turnstile_probe || false }}
     steps:
       - name: 检出仓库
@@ -39,19 +40,8 @@ jobs:
           set -euo pipefail
           test -n "${GOROUTER_SYSTEM_ACCESS_TOKEN:-}"
           test -n "${GOROUTER_USER_ID:-}"
+          test -n "${GOROUTER_COOKIE_HEADER:-}"
           echo "GoRouter secrets are configured"
 
-      - name: 安装运行环境
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
-        with:
-          enable-cache: true
-
-      - name: 安装浏览器依赖
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv sync --frozen
-          uv run camoufox fetch
-
       - name: 执行 GoRouter 签到
-        run: xvfb-run -a uv run python gorouter_checkin.py
+        run: python gorouter_checkin.py
