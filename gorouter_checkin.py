@@ -164,12 +164,14 @@ async def solve_turnstile_token() -> str:
                       document.querySelector('#gorouter-checkin-turnstile')?.remove();
                       const host = document.createElement('div');
                       host.id = 'gorouter-checkin-turnstile';
-                      host.style.cssText = 'position:fixed;left:24px;top:24px;z-index:2147483647;background:white;padding:12px';
+                      host.style.cssText = 'position:fixed;left:24px;top:24px;width:330px;height:90px;z-index:2147483647;background:white;padding:12px';
                       document.body.appendChild(host);
                       window.__gorouterTurnstileToken = '';
                       window.turnstile.render(host, {
                         sitekey,
                         appearance: 'always',
+                        size: 'normal',
+                        theme: 'light',
                         callback: token => { window.__gorouterTurnstileToken = token; }
                       });
                       return true;
@@ -198,7 +200,14 @@ async def solve_turnstile_token() -> str:
                     # widget frame directly without reading its cross-origin
                     # contents, then wait for the hidden response input.
                     clicked = False
+                    host = await page.query_selector("#gorouter-checkin-turnstile")
+                    host_box = await host.bounding_box() if host else None
+                    if host_box:
+                        await page.mouse.click(host_box["x"] + 42, host_box["y"] + 42)
+                        clicked = True
                     for iframe in await page.query_selector_all("iframe"):
+                        if clicked:
+                            break
                         box = await iframe.bounding_box()
                         if box and box["width"] >= 100 and box["height"] >= 40:
                             await page.mouse.click(
