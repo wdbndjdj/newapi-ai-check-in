@@ -49,7 +49,10 @@ def request_json(method: str, path: str, *, use_token: bool = False) -> dict:
         fail("session cookie is required")
     headers["Cookie"] = COOKIE_HEADER
     if use_token and TOKEN:
-        headers["Authorization"] = f"Bearer {TOKEN}"
+        # new-api dashboard access tokens are sent verbatim (they are not
+        # OAuth bearer tokens). This also keeps an expired browser session
+        # recoverable without changing the primary session-first flow.
+        headers["Authorization"] = TOKEN
     body = b"{}" if method == "POST" else None
     if body is not None:
         headers["Content-Type"] = "application/json"
