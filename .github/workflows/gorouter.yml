@@ -1,7 +1,13 @@
 name: GoRouter 自动签到
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_turnstile_probe:
+        description: '即使今天已签到，也验证 Turnstile 与签到接口'
+        required: false
+        type: boolean
+        default: false
   schedule:
     # UTC 00:17 / 08:17 / 16:17 = 北京时间 08:17 / 16:17 / 00:17
     - cron: '17 0,8,16 * * *'
@@ -18,11 +24,11 @@ jobs:
     name: 签到并核对结果
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 5
+    timeout-minutes: 12
     env:
       GOROUTER_SYSTEM_ACCESS_TOKEN: ${{ secrets.GOROUTER_SYSTEM_ACCESS_TOKEN }}
       GOROUTER_USER_ID: ${{ secrets.GOROUTER_USER_ID }}
-      GOROUTER_COOKIE_HEADER: ${{ secrets.GOROUTER_COOKIE_HEADER }}
+      GOROUTER_FORCE_POST: ${{ github.event_name == 'workflow_dispatch' && inputs.force_turnstile_probe || false }}
     steps:
       - name: 检出仓库
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -33,8 +39,19 @@ jobs:
           set -euo pipefail
           test -n "${GOROUTER_SYSTEM_ACCESS_TOKEN:-}"
           test -n "${GOROUTER_USER_ID:-}"
-          test -n "${GOROUTER_COOKIE_HEADER:-}"
           echo "GoRouter secrets are configured"
 
+      - name: 安装运行环境
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          enable-cache: true
+
+      - name: 安装浏览器依赖
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          uv run camoufox fetch
+
       - name: 执行 GoRouter 签到
-        run: python gorouter_checkin.py
+        run: xvfb-run -a uv run python gorouter_checkin.py
