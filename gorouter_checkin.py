@@ -73,6 +73,9 @@ def request_json(method: str, path: str, *, use_token: bool = False) -> dict:
                 payload = json.loads(raw)
             except json.JSONDecodeError:
                 payload = {}
+            if exc.code == 401 and isinstance(payload, dict):
+                payload["_http_status"] = exc.code
+                return payload
             retryable = exc.code == 429 or 500 <= exc.code < 600
             if retryable and attempt < 3:
                 continue
