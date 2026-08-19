@@ -131,6 +131,11 @@ async def solve_turnstile_token() -> str:
             await page.wait_for_timeout(5_000)
 
             async def read_token() -> str:
+                callback_token = await page.evaluate(
+                    "() => window.__gorouterTurnstileToken || ''"
+                )
+                if callback_token:
+                    return str(callback_token)
                 for selector in (
                     'input[name="cf-turnstile-response"]',
                     'textarea[name="cf-turnstile-response"]',
@@ -143,6 +148,41 @@ async def solve_turnstile_token() -> str:
                 return ""
 
             token = await read_token()
+            if not token:
+                # GoRouter's built-in widget uses interaction-only appearance,
+                # so its iframe can remain 0x0 until a form action. Render a
+                # normal visible widget with the same public site key.
+                rendered = await page.evaluate(
+                    """
+                    async () => {
+                      const response = await fetch('/api/status');
+                      const payload = await response.json();
+                      const data = payload.data || payload;
+                      const sitekey = data.turnstile_site_key ||
+                        data.turnstile_sitekey || data.turnstile_key;
+                      if (!sitekey || !window.turnstile) return false;
+                      document.querySelector('#gorouter-checkin-turnstile')?.remove();
+                      const host = document.createElement('div');
+                      host.id = 'gorouter-checkin-turnstile';
+                      host.style.cssText = 'position:fixed;left:24px;top:24px;z-index:2147483647;background:white;padding:12px';
+                      document.body.appendChild(host);
+                      window.__gorouterTurnstileToken = '';
+                      window.turnstile.render(host, {
+                        sitekey,
+                        appearance: 'always',
+                        callback: token => { window.__gorouterTurnstileToken = token; }
+                      });
+                      return true;
+                    }
+                    """
+                )
+                print(
+                    f"ACCOUNT={ACCOUNT_NAME} TURNSTILE_RENDER="
+                    f"{'READY' if rendered else 'UNAVAILABLE'}"
+                )
+                await page.wait_for_timeout(3_000)
+                token = await read_token()
+
             if not token:
                 inputs = len(await page.query_selector_all('[name="cf-turnstile-response"]'))
                 frames = len(await page.query_selector_all("iframe"))
