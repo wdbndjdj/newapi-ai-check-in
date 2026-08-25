@@ -99,20 +99,41 @@ def test_github_oauth_browser_keeps_account_proxy(monkeypatch):
     assert "Got auth state for GitHub: {auth_state_result['state']}" not in checkin_source
     assert 'Using client_id: {client_id}, auth_state: {auth_state}' not in signin_source
 
-def test_seekai_workflow_uses_pat_and_reuses_vmess_proxy():
+
+def test_seekai_workflow_requires_six_pats_and_reuses_vmess_proxy():
     workflow = (
         Path(__file__).parent.parent / '.github' / 'workflows' / 'seekai.yml'
     ).read_text(encoding='utf-8')
 
+    assert workflow.count('${{ secrets.SEEKAI_ACCESS_TOKEN') == 6
     assert 'SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}' in workflow
+    for index in range(2, 7):
+        secret_binding = (
+            f'SEEKAI_ACCESS_TOKEN_{index}: '
+            f'${{{{ secrets.SEEKAI_ACCESS_TOKEN_{index} }}}}'
+        )
+        assert secret_binding in workflow
+    assert 'SEEKAI_ACCESS_TOKEN_7:' not in workflow
     assert 'GITHUB_TOKEN: ${{ github.token }}' in workflow
     assert 'SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}' in workflow
     assert 'provider = "seekai"' in workflow
-    assert 'system_access_token = $env:SEEKAI_ACCESS_TOKEN' in workflow
-    assert 'Write-Output "::add-mask::$env:SEEKAI_ACCESS_TOKEN"' in workflow
+    assert 'system_access_token = $token' in workflow
+    assert 'Write-Output "::add-mask::$token"' in workflow
+    assert '$accountObjects.Count -ne $requiredCount' in workflow
+    assert '[string]::IsNullOrWhiteSpace($rawToken)' in workflow
+    assert '$token = $rawToken.Trim()' in workflow
+    assert '[System.Collections.Generic.HashSet[string]]::new(' in workflow
+    assert '[System.StringComparer]::Ordinal' in workflow
+    assert 'if (-not $uniqueTokens.Add($token))' in workflow
+    assert 'name = "SeekAI $($index + 1)"' in workflow
+    assert workflow.count('Start-Process -FilePath $mihomoExe') == 1
+    assert workflow.count('uv run python -u main.py') == 1
+    assert workflow.count('$env:PROXY =') == 1
+    for index in range(2, 7):
+        assert workflow.count(f'SEEKAI_ACCESS_TOKEN_{index}') >= 2
     assert "headers={'Authorization': f\\\"Bearer {os.environ.get('GITHUB_TOKEN', '')}\\\"}" in workflow
     assert 'seekai-storage-' not in workflow
-    assert 'REQUIRED_ACCOUNT_SUCCESSES: "1"' in workflow
+    assert 'REQUIRED_ACCOUNT_SUCCESSES: "6"' in workflow
     assert 'mihomoVersion = "v1.19.30"' in workflow
     assert (
         'mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"'
@@ -121,5 +142,5 @@ def test_seekai_workflow_uses_pat_and_reuses_vmess_proxy():
     assert '& $mihomoExe -t -f $configPath' in workflow
     assert 'VMESS_EGRESS_CHANGED=True' in workflow
     assert '$env:PROXY = \'{"server":"http://127.0.0.1:7890"}\'' in workflow
-    assert 'SEEKAI_SUCCESS_COUNT=1/1' in workflow
+    assert 'SEEKAI_SUCCESS_COUNT=6/6' in workflow
     assert 'qualification-isbn-improvements-governments.trycloudflare.com' not in workflow

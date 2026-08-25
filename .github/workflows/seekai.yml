@@ -21,8 +21,13 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ github.token }}
       SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}
+      SEEKAI_ACCESS_TOKEN_2: ${{ secrets.SEEKAI_ACCESS_TOKEN_2 }}
+      SEEKAI_ACCESS_TOKEN_3: ${{ secrets.SEEKAI_ACCESS_TOKEN_3 }}
+      SEEKAI_ACCESS_TOKEN_4: ${{ secrets.SEEKAI_ACCESS_TOKEN_4 }}
+      SEEKAI_ACCESS_TOKEN_5: ${{ secrets.SEEKAI_ACCESS_TOKEN_5 }}
+      SEEKAI_ACCESS_TOKEN_6: ${{ secrets.SEEKAI_ACCESS_TOKEN_6 }}
       SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      REQUIRED_ACCOUNT_SUCCESSES: "1"
+      REQUIRED_ACCOUNT_SUCCESSES: "6"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -83,16 +88,43 @@ jobs:
       - name: 生成 SeekAI 账号配置
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SEEKAI_ACCESS_TOKEN)) {
-            throw "请配置 SEEKAI_ACCESS_TOKEN"
+          $secretNames = @(
+            "SEEKAI_ACCESS_TOKEN",
+            "SEEKAI_ACCESS_TOKEN_2",
+            "SEEKAI_ACCESS_TOKEN_3",
+            "SEEKAI_ACCESS_TOKEN_4",
+            "SEEKAI_ACCESS_TOKEN_5",
+            "SEEKAI_ACCESS_TOKEN_6"
+          )
+          $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
+          if ($requiredCount -ne $secretNames.Count) {
+            throw "SeekAI 账号目标数量与 Secret 槽位数量不一致"
           }
-          Write-Output "::add-mask::$env:SEEKAI_ACCESS_TOKEN"
-          $account = [ordered]@{
-            name = "SeekAI"
-            provider = "seekai"
-            system_access_token = $env:SEEKAI_ACCESS_TOKEN
+          $accountObjects = @()
+          $uniqueTokens = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+          )
+          for ($index = 0; $index -lt $secretNames.Count; $index++) {
+            $rawToken = [System.Environment]::GetEnvironmentVariable($secretNames[$index])
+            if ([string]::IsNullOrWhiteSpace($rawToken)) { continue }
+            $token = $rawToken.Trim()
+            if ($token -ne $rawToken) {
+              throw "SeekAI 账号 Secret 含首尾空格：$($secretNames[$index])"
+            }
+            Write-Output "::add-mask::$token"
+            if (-not $uniqueTokens.Add($token)) {
+              throw "SeekAI 账号 Secret 重复：$($secretNames[$index])"
+            }
+            $accountObjects += [ordered]@{
+              name = "SeekAI $($index + 1)"
+              provider = "seekai"
+              system_access_token = $token
+            }
           }
-          $accounts = ConvertTo-Json -Compress -Depth 8 -InputObject @($account)
+          if ($accountObjects.Count -ne $requiredCount) {
+            throw "SeekAI 账号 Secret 仅配置 $($accountObjects.Count)/$requiredCount"
+          }
+          $accounts = ConvertTo-Json -Compress -Depth 8 -InputObject @($accountObjects)
           "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: 通过 VMess 执行 SeekAI 签到
@@ -160,7 +192,7 @@ jobs:
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
             if ($checkinExit -ne 0) { throw "SeekAI 签到失败" }
-            Write-Output "SEEKAI_SUCCESS_COUNT=1/1"
+            Write-Output "SEEKAI_SUCCESS_COUNT=6/6"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id
