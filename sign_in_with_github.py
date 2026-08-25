@@ -28,13 +28,14 @@ class GitHubSignIn:
         provider_config: ProviderConfig,
         username: str,
         password: str,
+        proxy_config: dict | None = None,
     ):
         """初始化
 
         Args:
             account_name: 账号名称
             provider_config: 提供商配置
-            proxy_conf
+            proxy_config: Camoufox 代理配置
             username: GitHub 用户名
             password: GitHub 密码
         """
@@ -42,6 +43,7 @@ class GitHubSignIn:
         self.provider_config = provider_config
         self.username = username
         self.password = password
+        self.proxy_config = proxy_config
 
     async def signin(
         self,
@@ -63,9 +65,7 @@ class GitHubSignIn:
             - 浏览器指纹头部信息仅在检测到 Cloudflare 验证页面时返回
         """
         print(f"ℹ️ {self.account_name}: Executing sign-in with GitHub account")
-        print(
-            f"ℹ️ {self.account_name}: Using client_id: {client_id}, auth_state: {auth_state}, cache_file: {cache_file_path}"
-        )
+        print(f"ℹ️ {self.account_name}: OAuth state prepared, cache_file: {cache_file_path}")
 
         async with AsyncCamoufox(
             # persistent_context=True,
@@ -74,6 +74,8 @@ class GitHubSignIn:
             humanize=True,
             locale="en-US",
             os="macos",  # 强制使用 macOS 指纹，避免跨平台指纹不一致问题
+            geoip=True if self.proxy_config else False,
+            proxy=self.proxy_config,
             config={
                 "forceScopeAccess": True,
             },

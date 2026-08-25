@@ -185,7 +185,7 @@ Affs:
 #### 3.3 字段说明：
 
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
-- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`、`tabitoken`，默认使用 `anyrouter`
+- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`、`tabitoken`、`seekai`，默认使用 `anyrouter`
 - `proxy` (可选)：单个账号代理配置，支持 `http`、`socks5` 代理
 - `cookies`(可选)：用于身份验证的 cookies 数据
 - `system_access_token`(可选)：系统访问令牌，通过 `Authorization: Bearer <token>` 方式认证签到
@@ -316,6 +316,18 @@ GitHub 仓库的 **Settings -> Environments -> production -> Environment secrets
 GitHub Environment Secret `TABITOKEN_CLASH_CONFIG`。运行时会下载固定版本并校验 SHA-256，
 验证配置和代理出口后，只为本次签到设置 `PROXY={"server":"http://127.0.0.1:7890"}`；
 节点服务器、UUID、SNI 与 WebSocket 路径不会写入仓库或 Actions 日志。
+
+#### 3.10 SeekAI 自动签到
+
+内置 `seekai` provider 对接 `https://seekai.cc` 的新版 New API 会话鉴权和
+`/api/user/checkin` 接口。`.github/workflows/seekai.yml` 每天北京时间 **09:27** 运行，
+会从现有 `ACCOUNTS` Environment Secret 中复用第一个包含用户名和密码的 GitHub 登录配置，
+生成只含一个 SeekAI 账号的临时配置；凭据值只在 Actions 内存与掩码环境中使用。
+
+SeekAI workflow 直接复用 `TABITOKEN_CLASH_CONFIG` 中已经配置的 VMess 节点。流程会先校验
+Mihomo 下载文件和代理配置，再确认代理出口与直连出口不同，最后才通过本地
+`http://127.0.0.1:7890` 执行签到。程序先查询当天签到状态，已经签到时直接成功退出，
+避免重复领取。
 
 ### 4. 启用 GitHub Actions
 

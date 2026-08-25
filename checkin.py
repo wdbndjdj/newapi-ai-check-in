@@ -1273,7 +1273,7 @@ class CheckIn:
                 provider="github",
             )
             if auth_state_result and auth_state_result.get("success"):
-                print(f"ℹ️ {self.account_name}: Got auth state for GitHub: {auth_state_result['state']}")
+                print(f"ℹ️ {self.account_name}: Got auth state for GitHub")
             else:
                 error_msg = auth_state_result.get("error", "Unknown error")
                 print(f"❌ {self.account_name}: {error_msg}")
@@ -1290,6 +1290,7 @@ class CheckIn:
                 provider_config=self.provider_config,
                 username=username,
                 password=password,
+                proxy_config=self.camoufox_proxy_config,
             )
 
             success, result_data, oauth_browser_headers = await github.signin(
