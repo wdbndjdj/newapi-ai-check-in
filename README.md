@@ -308,9 +308,9 @@ GitHub 仓库的 **Settings -> Environments -> production -> Environment secrets
 **TaBi Token 自动签到** 后点击 **Run workflow** 手动验证。流程会先查当天状态，避免重复签到；
 接口要求 Turnstile 时会获取验证令牌并重试一次。
 
-六账号模式使用 `TABITOKEN_ACCESS_TOKEN`、`TABITOKEN_ACCESS_TOKEN_2` 至
-`TABITOKEN_ACCESS_TOKEN_6` 六个 Environment Secrets。workflow 会生成六个独立账号并依次
-签到；它会拒绝空白或重复令牌，且只有程序确认六个账号全部成功时任务才成功。
+十二账号模式使用 `TABITOKEN_ACCESS_TOKEN`、`TABITOKEN_ACCESS_TOKEN_2` 至
+`TABITOKEN_ACCESS_TOKEN_12` 十二个 Environment Secrets。workflow 会生成十二个独立账号并依次
+签到；它会拒绝空白或重复令牌，且只有程序确认十二个账号全部成功时任务才成功。
 
 该专用 workflow 支持 VMess：把只含目标节点、监听 `mixed-port: 7890` 的 Mihomo 配置保存为
 GitHub Environment Secret `TABITOKEN_CLASH_CONFIG`。运行时会下载固定版本并校验 SHA-256，

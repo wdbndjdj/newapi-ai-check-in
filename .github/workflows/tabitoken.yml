@@ -25,8 +25,14 @@ jobs:
       TABITOKEN_ACCESS_TOKEN_4: ${{ secrets.TABITOKEN_ACCESS_TOKEN_4 }}
       TABITOKEN_ACCESS_TOKEN_5: ${{ secrets.TABITOKEN_ACCESS_TOKEN_5 }}
       TABITOKEN_ACCESS_TOKEN_6: ${{ secrets.TABITOKEN_ACCESS_TOKEN_6 }}
+      TABITOKEN_ACCESS_TOKEN_7: ${{ secrets.TABITOKEN_ACCESS_TOKEN_7 }}
+      TABITOKEN_ACCESS_TOKEN_8: ${{ secrets.TABITOKEN_ACCESS_TOKEN_8 }}
+      TABITOKEN_ACCESS_TOKEN_9: ${{ secrets.TABITOKEN_ACCESS_TOKEN_9 }}
+      TABITOKEN_ACCESS_TOKEN_10: ${{ secrets.TABITOKEN_ACCESS_TOKEN_10 }}
+      TABITOKEN_ACCESS_TOKEN_11: ${{ secrets.TABITOKEN_ACCESS_TOKEN_11 }}
+      TABITOKEN_ACCESS_TOKEN_12: ${{ secrets.TABITOKEN_ACCESS_TOKEN_12 }}
       TABITOKEN_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      REQUIRED_ACCOUNT_SUCCESSES: "6"
+      REQUIRED_ACCOUNT_SUCCESSES: "12"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -82,8 +88,18 @@ jobs:
             "TABITOKEN_ACCESS_TOKEN_3",
             "TABITOKEN_ACCESS_TOKEN_4",
             "TABITOKEN_ACCESS_TOKEN_5",
-            "TABITOKEN_ACCESS_TOKEN_6"
+            "TABITOKEN_ACCESS_TOKEN_6",
+            "TABITOKEN_ACCESS_TOKEN_7",
+            "TABITOKEN_ACCESS_TOKEN_8",
+            "TABITOKEN_ACCESS_TOKEN_9",
+            "TABITOKEN_ACCESS_TOKEN_10",
+            "TABITOKEN_ACCESS_TOKEN_11",
+            "TABITOKEN_ACCESS_TOKEN_12"
           )
+          $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
+          if ($requiredCount -ne $secretNames.Count) {
+            throw "TaBi Token 账号目标数量与 Secret 槽位数量不一致"
+          }
           $accountObjects = @()
           $uniqueTokens = [System.Collections.Generic.HashSet[string]]::new(
             [System.StringComparer]::Ordinal
@@ -101,8 +117,8 @@ jobs:
               system_access_token = $token
             }
           }
-          if ($accountObjects.Count -ne 6) {
-            throw "TaBi Token 账号 Secret 仅配置 $($accountObjects.Count)/6"
+          if ($accountObjects.Count -ne $requiredCount) {
+            throw "TaBi Token 账号 Secret 仅配置 $($accountObjects.Count)/$requiredCount"
           }
           $accounts = ConvertTo-Json -Compress -InputObject @($accountObjects)
           "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -171,8 +187,8 @@ jobs:
             $env:PROXY = '{"server":"http://127.0.0.1:7890"}'
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
-            if ($checkinExit -ne 0) { throw "TaBi Token 六账号签到未全部成功" }
-            Write-Output "TABITOKEN_SUCCESS_COUNT=6/6"
+            if ($checkinExit -ne 0) { throw "TaBi Token 十二账号签到未全部成功" }
+            Write-Output "TABITOKEN_SUCCESS_COUNT=12/12"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id

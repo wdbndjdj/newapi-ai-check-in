@@ -1,6 +1,8 @@
 import asyncio
 import inspect
 import json
+import os
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -233,26 +235,52 @@ def test_tabitoken_workflow_starts_pinned_local_vmess_proxy():
     assert "qualification-isbn-improvements-governments.trycloudflare.com" not in workflow
 
 
-def test_tabitoken_workflow_requires_six_access_tokens():
+def test_tabitoken_workflow_requires_twelve_access_tokens():
     workflow = (
         Path(__file__).parent.parent / ".github" / "workflows" / "tabitoken.yml"
     ).read_text(encoding="utf-8")
 
-    assert workflow.count("${{ secrets.TABITOKEN_ACCESS_TOKEN") == 6
-    for index in range(2, 7):
+    assert workflow.count("${{ secrets.TABITOKEN_ACCESS_TOKEN") == 12
+    for index in range(2, 13):
         assert f"TABITOKEN_ACCESS_TOKEN_{index}:" in workflow
-    assert "$accountObjects.Count -ne 6" in workflow
+    assert "$accountObjects.Count -ne $requiredCount" in workflow
     assert "[string]::IsNullOrWhiteSpace($token)" in workflow
     assert 'Write-Output "::add-mask::$token"' in workflow
     assert "$uniqueTokens.Add($token)" in workflow
-    assert 'REQUIRED_ACCOUNT_SUCCESSES: "6"' in workflow
-    assert 'Write-Output "TABITOKEN_SUCCESS_COUNT=6/6"' in workflow
+    assert 'REQUIRED_ACCOUNT_SUCCESSES: "12"' in workflow
+    assert 'Write-Output "TABITOKEN_SUCCESS_COUNT=12/12"' in workflow
     assert "Select-String -LiteralPath $checkinLog" not in workflow
     assert "if: always() && (inputs.debug == true || vars.DEBUG == 'true')" in workflow
 
 
 def test_strict_account_exit_code():
-    assert strict_account_exit_code(6, 6, 6) == 0
-    assert strict_account_exit_code(5, 6, 6) == 1
-    assert strict_account_exit_code(0, 6, 6) == 1
-    assert strict_account_exit_code(6, 7, 6) == 1
+    assert strict_account_exit_code(12, 12, 12) == 0
+    assert strict_account_exit_code(11, 12, 12) == 1
+    assert strict_account_exit_code(0, 12, 12) == 1
+    assert strict_account_exit_code(12, 13, 12) == 1
+
+
+def test_empty_accounts_process_exits_nonzero():
+    env = os.environ.copy()
+    env.update(
+        {
+            "ACCOUNTS": "[]",
+            "PROVIDERS": "",
+            "ACCOUNTS_GITHUB": "",
+            "ACCOUNTS_LINUX_DO": "",
+            "REQUIRED_ACCOUNT_SUCCESSES": "12",
+        }
+    )
+
+    result = subprocess.run(
+        [sys.executable, "main.py"],
+        cwd=Path(__file__).parent.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "Unable to load account configuration" in result.stdout

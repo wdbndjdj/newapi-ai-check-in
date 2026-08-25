@@ -65,7 +65,7 @@ async def main():
     # 检查账号配置
     if not app_config.accounts:
         print("❌ Unable to load account configuration, program exits")
-        return 1
+        sys.exit(1)
     
     print(f"⚙️ Found {len(app_config.accounts)} account(s)")
 
@@ -198,16 +198,24 @@ async def main():
 
     if need_notify and notification_content:
         # 构建通知内容
+        summary_success_count = (
+            successful_account_count
+            if required_accounts is not None
+            else success_count
+        )
+        summary_total_count = (
+            required_accounts if required_accounts is not None else total_count
+        )
         summary = [
             "-------------------------------",
             "📢 Check-in result statistics:",
-            f"🔵 Success: {success_count}/{total_count}",
-            f"🔴 Failed: {total_count - success_count}/{total_count}",
+            f"🔵 Success: {summary_success_count}/{summary_total_count}",
+            f"🔴 Failed: {summary_total_count - summary_success_count}/{summary_total_count}",
         ]
 
-        if success_count == total_count:
+        if summary_success_count == summary_total_count:
             summary.append("✅ All accounts check-in successful!")
-        elif success_count > 0:
+        elif summary_success_count > 0:
             summary.append("⚠️ Some accounts check-in successful")
         else:
             summary.append("❌ All accounts check-in failed")
