@@ -6,15 +6,14 @@
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Generator, AsyncGenerator, List, Literal
+from typing import AsyncGenerator, Callable, Dict, Generator, List, Literal
 
-from utils.get_check_in_status import newapi_check_in_status
 from utils.get_cdk import (
     get_runawaytime_cdk,
     get_x666_cdk,
     # get_b4u_cdk,
 )
-
+from utils.get_check_in_status import newapi_check_in_status
 
 # 前向声明 AccountConfig 类型，用于类型注解
 # 实际的 AccountConfig 类在后面定义
@@ -48,6 +47,7 @@ class ProviderConfig:
     get_cdk: CdkGetterFunc | AsyncCdkGetterFunc | None = None
     api_user_key: str = "new-api-user"
     github_client_id: str | None = None
+    github_oauth: bool = False  # OAuth 已启用，但 client_id 需要从 /api/status 动态获取
     github_auth_path: str = "/api/oauth/github"
     github_auth_redirect_path: str = "/oauth/**"  # OAuth 回调路径匹配模式，支持通配符
     linuxdo_client_id: str | None = None
@@ -56,6 +56,8 @@ class ProviderConfig:
     aliyun_captcha: bool = False
     bypass_method: Literal["waf_cookies", "cf_clearance"] | None = None
     auto_add: bool = False
+    session_auth: bool = False  # 新版 New API：cookie + 短期 Bearer access token 会话
+    turnstile_check: bool = False  # 签到接口可能要求 Cloudflare Turnstile token
     isCustomize: bool = False  # 是否为自定义 provider（从环境变量加载）
 
     @classmethod
@@ -84,6 +86,7 @@ class ProviderConfig:
             get_cdk=data.get("get_cdk"),  # 函数类型无法从 JSON 解析，需要代码中设置
             api_user_key=data.get("api_user_key", "new-api-user"),
             github_client_id=data.get("github_client_id"),
+            github_oauth=data.get("github_oauth", False),
             github_auth_path=data.get("github_auth_path", "/api/oauth/github"),
             github_auth_redirect_path=data.get("github_auth_redirect_path", "/oauth/**"),
             linuxdo_client_id=data.get("linuxdo_client_id"),
@@ -92,6 +95,8 @@ class ProviderConfig:
             aliyun_captcha=data.get("aliyun_captcha", False),
             bypass_method=data.get("bypass_method"),
             auto_add=data.get("auto_add", False),
+            session_auth=data.get("session_auth", False),
+            turnstile_check=data.get("turnstile_check", False),
             isCustomize=is_customize,
         )
 
@@ -390,9 +395,9 @@ class AppConfig:
         github_accounts = cls._load_oauth_accounts(github_accounts_env, "GitHub")
 
         # 加载账号配置（传入全局 OAuth 账号用于解析 bool 类型配置）
-        accounts = cls._load_accounts(accounts_env, linux_do_accounts, github_accounts)
+        accounts = cls._load_accounts(accounts_env, linux_do_accounts, github_accounts, providers)
 
-        # 自动为自定义 provider 添加账号（如果 accounts 中没有对应的 provider）
+        # 自动为启用了 auto_add 的 provider 添加账号（如果 accounts 中没有对应的 provider）
         accounts = cls._auto_add_accounts_for_custom_providers(providers, accounts, linux_do_accounts, github_accounts)
 
         # 加载全局代理配置
@@ -414,10 +419,10 @@ class AppConfig:
         global_linux_do_accounts: List["OAuthAccountConfig"],
         global_github_accounts: List["OAuthAccountConfig"],
     ) -> List["AccountConfig"]:
-        """为自定义 provider 自动添加账号
+        """为启用了 auto_add 的 provider 自动添加账号
 
-        检查所有 isCustomize=True 的 provider，如果 accounts 中没有对应的账号，
-        则根据 provider 的 linuxdo_client_id 或 github_client_id 自动创建账号
+        内置和自定义 provider 都可以显式开启 auto_add。如果 accounts 中没有对应
+        账号，则根据 OAuth 能力与全局账号自动创建账号。
 
         Args:
             providers: provider 配置字典
@@ -431,27 +436,24 @@ class AppConfig:
         # 获取所有已存在的 provider 名称
         existing_providers = {account.provider for account in accounts}
 
-        # 遍历所有自定义 provider
+        # 遍历所有显式开启自动添加的 provider
         for provider_name, provider_config in providers.items():
-            if not provider_config.isCustomize:
-                continue
-
             if not provider_config.auto_add:
                 continue
 
             # 如果该 provider 已经在 accounts 中，跳过
             if provider_name in existing_providers:
-                print(f"ℹ️ Custom provider '{provider_name}' already has account(s), skipping auto-add")
+                print(f"ℹ️ Provider '{provider_name}' already has account(s), skipping auto-add")
                 continue
 
             # 检查是否有可用的认证方式
             has_linuxdo = provider_config.linuxdo_client_id and global_linux_do_accounts
-            has_github = provider_config.github_client_id and global_github_accounts
+            has_github = (provider_config.github_client_id or provider_config.github_oauth) and global_github_accounts
 
             if not has_linuxdo and not has_github:
                 print(
-                    f"⚠️ Custom provider '{provider_name}' has no authentication method "
-                    f"(no linuxdo_client_id/github_client_id or no global accounts), skipping auto-add"
+                    f"⚠️ Provider '{provider_name}' has no authentication method "
+                    f"(OAuth disabled or no global accounts), skipping auto-add"
                 )
                 continue
 
@@ -467,11 +469,11 @@ class AppConfig:
 
             if has_linuxdo:
                 linux_do_accounts = global_linux_do_accounts.copy()
-                print(f"✅ Auto-adding account for custom provider '{provider_name}' with Linux.do authentication")
+                print(f"✅ Auto-adding account for provider '{provider_name}' with Linux.do authentication")
 
             if has_github:
                 github_accounts = global_github_accounts.copy()
-                print(f"✅ Auto-adding account for custom provider '{provider_name}' with GitHub authentication")
+                print(f"✅ Auto-adding account for provider '{provider_name}' with GitHub authentication")
 
             # 创建 AccountConfig
             new_account = AccountConfig.from_dict(new_account_data, linux_do_accounts, github_accounts)
@@ -836,6 +838,30 @@ class AppConfig:
                 aliyun_captcha=False,
                 bypass_method=None,
             ),
+            "tabitoken": ProviderConfig(
+                name="tabitoken",
+                origin="https://tabitoken.com",
+                login_path="/sign-in",
+                status_path="/api/status",
+                auth_state_path="/api/oauth/state",
+                check_in_path="/api/user/checkin",
+                check_in_status=True,
+                user_info_path="/api/user/self",
+                topup_path=None,
+                get_cdk=None,
+                api_user_key="new-api-user",
+                github_client_id=None,
+                github_oauth=True,
+                github_auth_path="/api/oauth/github",
+                github_auth_redirect_path="/oauth/github**",
+                linuxdo_client_id=None,
+                linuxdo_auth_path="/api/oauth/linuxdo",
+                aliyun_captcha=False,
+                bypass_method=None,
+                auto_add=True,
+                session_auth=True,
+                turnstile_check=True,
+            ),
             "futurehub": ProviderConfig(
                 name="futurehub",
                 origin="https://api.futureppo.top",
@@ -1015,6 +1041,7 @@ class AppConfig:
         accounts_env: str,
         global_linux_do_accounts: List["OAuthAccountConfig"],
         global_github_accounts: List["OAuthAccountConfig"],
+        providers: Dict[str, ProviderConfig] | None = None,
     ) -> List["AccountConfig"]:
         """从环境变量加载多账号配置
 
@@ -1101,8 +1128,10 @@ class AppConfig:
                 if has_system_access_token:
                     system_access_token_value = account.get("system_access_token")
                     api_user = account.get("api_user")
+                    provider_config = (providers or {}).get(account.get("provider", "anyrouter"))
+                    api_user_optional = bool(provider_config and provider_config.session_auth)
 
-                    if system_access_token_value and api_user:
+                    if system_access_token_value and (api_user or api_user_optional):
                         valid_system_access_token = True
                     elif system_access_token_value and not api_user:
                         print(f"⚠️ {account_name} with system_access_token must have api_user field")

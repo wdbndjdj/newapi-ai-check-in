@@ -4,22 +4,31 @@ CheckIn 类
 """
 
 import asyncio
-import json
-import inspect
 import hashlib
+import inspect
+import json
 import os
 import tempfile
-from urllib.parse import urlparse, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
-from curl_cffi import requests as curl_requests
 from camoufox.async_api import AsyncCamoufox
+from curl_cffi import requests as curl_requests
+
+from utils.browser_utils import (
+    aliyun_captcha_check,
+    filter_cookies,
+    get_random_user_agent,
+    parse_cookies,
+    take_screenshot,
+)
 from utils.config import AccountConfig, ProviderConfig
-from utils.browser_utils import parse_cookies, filter_cookies, get_random_user_agent, take_screenshot, aliyun_captcha_check
 from utils.get_cf_clearance import get_cf_clearance
-from utils.http_utils import proxy_resolve, response_resolve
-from utils.topup import topup
 from utils.get_headers import get_browser_headers, get_curl_cffi_impersonate, print_browser_headers
+from utils.get_turnstile_token import get_turnstile_token
+from utils.http_utils import proxy_resolve, response_resolve
 from utils.mask_utils import mask_username
+from utils.topup import topup
+
 
 class CheckIn:
     """newapi.ai 签到管理类"""
@@ -501,6 +510,7 @@ class CheckIn:
         self,
         session: curl_requests.Session,
         headers: dict,
+        provider: str = "github",
     ) -> dict:
         """获取认证状态
         
@@ -511,11 +521,20 @@ class CheckIn:
             headers: 请求头
         """
         try:
-            response = session.get(
-                self.provider_config.get_auth_state_url(),
-                headers=headers,
-                timeout=30,
-            )
+            if self.provider_config.session_auth:
+                # 新版 New API 使用显式 OAuth flow token，并要求 POST JSON。
+                response = session.post(
+                    self.provider_config.get_auth_state_url(),
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"provider": provider, "intent": "login"},
+                    timeout=30,
+                )
+            else:
+                response = session.get(
+                    self.provider_config.get_auth_state_url(),
+                    headers=headers,
+                    timeout=30,
+                )
 
             if response.status_code == 200:
                 json_data = response_resolve(response, "get_auth_state", self.account_name)
@@ -528,6 +547,14 @@ class CheckIn:
                 # 检查响应是否成功
                 if json_data.get("success"):
                     auth_data = json_data.get("data")
+                    if isinstance(auth_data, dict):
+                        auth_data = auth_data.get("flow_token")
+
+                    if not isinstance(auth_data, str) or not auth_data:
+                        return {
+                            "success": False,
+                            "error": "Failed to get auth state: flow token missing",
+                        }
 
                     # 将 curl_cffi Cookies 转换为 Camoufox 格式
                     result_cookies = []
@@ -729,7 +756,8 @@ class CheckIn:
         self,
         session: curl_requests.Session,
         headers: dict,
-        api_user: str | int,
+        api_user: str | int | None,
+        turnstile_token: str | None = None,
     ) -> dict:
         """执行签到请求
         
@@ -746,12 +774,16 @@ class CheckIn:
             print(f"❌ {self.account_name}: No check-in URL configured")
             return {"success": False, "error": "No check-in URL configured"}
 
+        if turnstile_token:
+            separator = "&" if "?" in check_in_url else "?"
+            check_in_url = f"{check_in_url}{separator}turnstile={quote(turnstile_token, safe='')}"
+
         response = session.post(check_in_url, headers=checkin_headers, timeout=30)
 
         print(f"📨 {self.account_name}: Response status code {response.status_code}")
 
-        # 尝试解析响应（200 或 400 都可能包含有效的 JSON）
-        if response.status_code in [200, 400]:
+        # 签到接口在 Turnstile 校验失败时也可能通过 400/403 返回 JSON。
+        if response.status_code in [200, 400, 403]:
             json_data = response_resolve(response, "execute_check_in", self.account_name)
             if json_data is None:
                 # 如果不是 JSON 响应（可能是 HTML），检查是否包含成功标识
@@ -763,7 +795,8 @@ class CheckIn:
                     return {"success": False, "error": "Invalid response format"}
 
             # 检查签到结果
-            message = json_data.get("message", json_data.get("msg", ""))
+            raw_message = json_data.get("message", json_data.get("msg"))
+            message = raw_message if isinstance(raw_message, str) else ""
 
             if (
                 json_data.get("ret") == 1
@@ -789,12 +822,48 @@ class CheckIn:
                     "data": check_in_data,
                 }
             else:
-                error_msg = json_data.get("msg", json_data.get("message", "Unknown error"))
+                error_msg = raw_message if isinstance(raw_message, str) and raw_message else "Unknown error"
                 print(f"❌ {self.account_name}: Check-in failed - {error_msg}")
-                return {"success": False, "error": error_msg}
+                lower_error = str(error_msg).lower()
+                needs_turnstile = self.provider_config.turnstile_check and (
+                    not isinstance(raw_message, str)
+                    or not raw_message
+                    or "turnstile" in lower_error
+                    or "验证令牌" in str(error_msg)
+                )
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "turnstile_required": needs_turnstile,
+                }
         else:
             print(f"❌ {self.account_name}: Check-in failed - HTTP {response.status_code}")
             return {"success": False, "error": f"HTTP {response.status_code}"}
+
+    async def execute_check_in_with_turnstile(
+        self,
+        session: curl_requests.Session,
+        headers: dict,
+        api_user: str | int | None,
+    ) -> dict:
+        """执行签到，并在服务端要求时完成 Turnstile 后重试一次。"""
+        result = self.execute_check_in(session, headers, api_user)
+        if not result.get("turnstile_required"):
+            return result
+        if not self.provider_config.turnstile_check:
+            return result
+
+        solution = await get_turnstile_token(
+            self.provider_config.origin,
+            self.account_name,
+            self.camoufox_proxy_config,
+        )
+        if not solution:
+            return {"success": False, "error": "Turnstile verification failed"}
+        token, turnstile_cookies, turnstile_headers = solution
+        session.cookies.update(turnstile_cookies)
+        headers.update(turnstile_headers)
+        return self.execute_check_in(session, headers, api_user, turnstile_token=token)
 
     async def execute_topup(
         self,
@@ -937,6 +1006,7 @@ class CheckIn:
         common_headers: dict,
         api_user: str | int,
         impersonate: str | None = None,
+        access_token: str | None = None,
     ) -> tuple[bool, dict]:
         """使用已有 cookies 执行签到操作
         
@@ -968,6 +1038,8 @@ class CheckIn:
             # 使用传入的公用请求头，并添加动态头部
             headers = common_headers.copy()
             headers[self.provider_config.api_user_key] = f"{api_user}"
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
             headers["Referer"] = self.provider_config.get_login_url()
             headers["Origin"] = self.provider_config.origin
 
@@ -986,7 +1058,7 @@ class CheckIn:
                         print(f"ℹ️ {self.account_name}: Already checked in today, skipping check-in")
                     else:
                         # 未签到，执行签到
-                        check_in_result = self.execute_check_in(session, headers, api_user)
+                        check_in_result = await self.execute_check_in_with_turnstile(session, headers, api_user)
                         if not check_in_result.get("success"):
                             return False, {"error": check_in_result.get("error", "Check-in failed")}
                         # 签到成功后再次查询状态（显示最新状态）
@@ -998,7 +1070,7 @@ class CheckIn:
                         )
                 else:
                     # 没有配置签到状态查询函数，直接执行签到
-                    check_in_result = self.execute_check_in(session, headers, api_user)
+                    check_in_result = await self.execute_check_in_with_turnstile(session, headers, api_user)
                     if not check_in_result.get("success"):
                         return False, {"error": check_in_result.get("error", "Check-in failed")}
             else:
@@ -1041,7 +1113,7 @@ class CheckIn:
         access_token: str,
         bypass_cookies: dict,
         common_headers: dict,
-        api_user: str | int,
+        api_user: str | int | None,
     ) -> tuple[bool, dict]:
         """使用 system access token 执行签到操作
         
@@ -1071,7 +1143,8 @@ class CheckIn:
             # 使用传入的公用请求头，并添加动态头部
             headers = common_headers.copy()
             headers["Authorization"] = f"Bearer {access_token}"
-            headers[self.provider_config.api_user_key] = f"{api_user}"
+            if api_user:
+                headers[self.provider_config.api_user_key] = f"{api_user}"
             headers["Referer"] = self.provider_config.get_login_url()
             headers["Origin"] = self.provider_config.origin
 
@@ -1090,7 +1163,7 @@ class CheckIn:
                         print(f"ℹ️ {self.account_name}: Already checked in today, skipping check-in")
                     else:
                         # 未签到，执行签到
-                        check_in_result = self.execute_check_in(session, headers, api_user)
+                        check_in_result = await self.execute_check_in_with_turnstile(session, headers, api_user)
                         if not check_in_result.get("success"):
                             return False, {"error": check_in_result.get("error", "Check-in failed")}
                         # 签到成功后再次查询状态（显示最新状态）
@@ -1102,7 +1175,7 @@ class CheckIn:
                         )
                 else:
                     # 没有配置签到状态查询函数，直接执行签到
-                    check_in_result = self.execute_check_in(session, headers, api_user)
+                    check_in_result = await self.execute_check_in_with_turnstile(session, headers, api_user)
                     if not check_in_result.get("success"):
                         return False, {"error": check_in_result.get("error", "Check-in failed")}
             else:
@@ -1197,6 +1270,7 @@ class CheckIn:
             auth_state_result = await self.get_auth_state(
                 session=session,
                 headers=headers,
+                provider="github",
             )
             if auth_state_result and auth_state_result.get("success"):
                 print(f"ℹ️ {self.account_name}: Got auth state for GitHub: {auth_state_result['state']}")
@@ -1238,7 +1312,13 @@ class CheckIn:
                     updated_headers.update(oauth_browser_headers)
 
                 merged_cookies = {**bypass_cookies, **user_cookies}
-                return await self.check_in_with_cookies(merged_cookies, updated_headers, api_user, impersonate)
+                return await self.check_in_with_cookies(
+                    merged_cookies,
+                    updated_headers,
+                    api_user,
+                    impersonate,
+                    access_token=result_data.get("access_token"),
+                )
             elif success and "code" in result_data and "state" in result_data:
                 # 收到 OAuth code，通过 HTTP 调用回调接口获取 api_user
                 print(f"ℹ️ {self.account_name}: Received OAuth code, calling callback API")
@@ -1360,6 +1440,7 @@ class CheckIn:
             auth_state_result = await self.get_auth_state(
                 session=session,
                 headers=headers,
+                provider="linuxdo",
             )
             if auth_state_result and auth_state_result.get("success"):
                 print(f"ℹ️ {self.account_name}: Got auth state for Linux.do: {auth_state_result['state']}")
@@ -1960,7 +2041,7 @@ class CheckIn:
             print(f"\nℹ️ {self.account_name}: Trying system access token authentication")
             try:
                 api_user = self.account_config.api_user
-                if not api_user:
+                if not api_user and not self.provider_config.session_auth:
                     print(f"❌ {self.account_name}: API user identifier not found for system access token")
                     results.append(("system_access_token", False, {"error": "API user identifier not found"}))
                 else:

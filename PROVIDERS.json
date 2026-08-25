@@ -1,4 +1,27 @@
 {
+  "tabitoken": {
+    "origin": "https://tabitoken.com",
+    "login_path": "/sign-in",
+    "status_path": "/api/status",
+    "auth_state_path": "/api/oauth/state",
+    "check_in_path": "/api/user/checkin",
+    "check_in_status": true,
+    "user_info_path": "/api/user/self",
+    "topup_path": null,
+    "get_cdk": null,
+    "api_user_key": "new-api-user",
+    "github_client_id": null,
+    "github_oauth": true,
+    "github_auth_path": "/api/oauth/github",
+    "github_auth_redirect_path": "/oauth/github**",
+    "linuxdo_client_id": null,
+    "linuxdo_auth_path": "/api/oauth/linuxdo",
+    "aliyun_captcha": false,
+    "bypass_method": null,
+    "auto_add": true,
+    "session_auth": true,
+    "turnstile_check": true
+  },
   "futurehub": {
     "origin": "https://api.futureppo.top",
     "login_path": "/login",

@@ -5,14 +5,16 @@
 
 import json
 import os
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
+
 from camoufox.async_api import AsyncCamoufox
 from playwright_captcha import CaptchaType, ClickSolver, FrameworkType
-from utils.browser_utils import filter_cookies, take_screenshot, save_page_content_to_file
+
+from utils.browser_utils import filter_cookies, save_page_content_to_file, take_screenshot
 from utils.config import ProviderConfig
-from utils.wait_for_secrets import WaitForSecrets
 from utils.get_headers import get_browser_headers, print_browser_headers
 from utils.storage_state import ensure_storage_state_from_env
+from utils.wait_for_secrets import WaitForSecrets
 
 STORAGE_STATE_ENV_NAME = "STORATE_STATES_GITHUB"
 
@@ -319,6 +321,57 @@ class GitHubSignIn:
                                 f"Current page is: {page.url}"
                             )
                             await take_screenshot(page, "github_authorization_failed", self.account_name)
+
+                    if self.provider_config.session_auth:
+                        # 新版 New API 的 OAuth 回调写入 HttpOnly refresh cookie；
+                        # 用它轮换出短期 Bearer token，再交给通用签到流程。
+                        try:
+                            await page.wait_for_timeout(3000)
+                            refresh_result = await page.evaluate(
+                                """async () => {
+                                    const response = await fetch('/api/user/auth/refresh', {
+                                        method: 'POST',
+                                        credentials: 'include',
+                                        headers: {
+                                            'Accept': 'application/json',
+                                            'Cache-Control': 'no-store'
+                                        }
+                                    });
+                                    let body = null;
+                                    try { body = await response.json(); } catch (_) {}
+                                    return { status: response.status, body };
+                                }"""
+                            )
+                            response_body = refresh_result.get("body") or {}
+                            bundle = response_body.get("data") if response_body.get("success") else response_body
+                            bundle = bundle if isinstance(bundle, dict) else {}
+                            access_token = bundle.get("access_token")
+                            user_data = bundle.get("user") or {}
+                            api_user = user_data.get("id")
+
+                            if refresh_result.get("status") != 200 or not access_token or not api_user:
+                                message = response_body.get("message") or "Invalid auth refresh response"
+                                print(f"❌ {self.account_name}: Session token refresh failed: {message}")
+                                return False, {"error": "Session token refresh failed"}, None
+
+                            cookies = await context.cookies()
+                            user_cookies = filter_cookies(cookies, self.provider_config.origin)
+                            # refresh cookie 会轮换，必须在刷新后保存最新状态。
+                            await context.storage_state(path=cache_file_path)
+                            print(f"✅ {self.account_name}: New API session token refreshed")
+                            return (
+                                True,
+                                {
+                                    "cookies": user_cookies,
+                                    "api_user": api_user,
+                                    "access_token": access_token,
+                                },
+                                None,
+                            )
+                        except Exception as e:
+                            print(f"❌ {self.account_name}: Error refreshing New API session token: {e}")
+                            await take_screenshot(page, "github_session_refresh_failed", self.account_name)
+                            return False, {"error": "Session token refresh error"}, None
 
                     # 从 localStorage 获取 user 对象并提取 id
                     api_user = None

@@ -185,11 +185,11 @@ Affs:
 #### 3.3 字段说明：
 
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
-- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`默认使用 `anyrouter`
+- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`、`tabitoken`，默认使用 `anyrouter`
 - `proxy` (可选)：单个账号代理配置，支持 `http`、`socks5` 代理
 - `cookies`(可选)：用于身份验证的 cookies 数据
 - `system_access_token`(可选)：系统访问令牌，通过 `Authorization: Bearer <token>` 方式认证签到
-- `api_user`(cookies 或 system_access_token 设置时必需)：用于请求头的 new-api-user 参数
+- `api_user`(旧版站点的 cookies 或 system_access_token 设置时必需)：用于请求头的 new-api-user 参数；`tabitoken` 等新版会话站点不需要
 - `linux.do`(可选)：用于登录身份验证，支持三种格式：
   - `true`：使用 `LINUX_DO_ACCOUNTS` 中的全局账号
   - `{"username": "xxx", "password": "xxx"}`：单个账号
@@ -276,6 +276,37 @@ Affs:
 通过打印日志中链接打开并输入验证码。
 
 ![输入 OTP](./assets/github-otp.png)
+
+#### 3.9 TaBi Token 自动签到
+
+TaBi Token 使用新版 New API Bearer 鉴权，并由 Cloudflare/Turnstile 保护。内置 `tabitoken`
+provider 会执行 `GET /api/user/checkin?month=YYYY-MM` 幂等检查、必要时调用
+`POST /api/user/checkin`，最后再次查询状态验证结果。
+
+推荐在 TaBi Token 的 **个人资料 -> 安全 -> Access Token** 中生成长期访问令牌。在
+GitHub 仓库的 **Settings -> Environments -> production -> Environment secrets** 新建
+`TABITOKEN_ACCESS_TOKEN`，值填写该令牌。专用 workflow 会自动生成等价于以下内容的账号配置：
+
+```json
+[
+  {
+    "name": "TaBi Token",
+    "provider": "tabitoken",
+    "system_access_token": "此处填写 Access Token"
+  }
+]
+```
+
+新版会话站点使用 `Authorization: Bearer <token>`，上述配置不需要 `api_user`。令牌只放在
+`TABITOKEN_ACCESS_TOKEN` secret，不写入仓库文件。
+
+如果已经配置全局 `ACCOUNTS_GITHUB`，`tabitoken` 会在没有同名账号时自动复用该 GitHub
+账号完成 OAuth 登录、轮换 `new_api_refresh` cookie 并取得短期 Bearer token，无需再改
+`ACCOUNTS`。二者同时存在时，专用 workflow 优先使用 Access Token。
+
+`.github/workflows/tabitoken.yml` 每天北京时间 **09:17** 自动运行，也可以在 Actions 中打开
+**TaBi Token 自动签到** 后点击 **Run workflow** 手动验证。流程会先查当天状态，避免重复签到；
+接口要求 Turnstile 时会获取验证令牌并重试一次。
 
 ### 4. 启用 GitHub Actions
 
