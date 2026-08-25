@@ -846,8 +846,38 @@ class CheckIn:
         headers: dict,
         api_user: str | int | None,
     ) -> dict:
-        """执行签到，并在服务端要求时完成 Turnstile 后重试一次。"""
-        result = self.execute_check_in(session, headers, api_user)
+        """执行签到，短暂网络错误重试，并在需要时完成 Turnstile。"""
+
+        async def execute_with_network_retry(turnstile_token: str | None = None) -> dict:
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return self.execute_check_in(
+                        session,
+                        headers,
+                        api_user,
+                        turnstile_token=turnstile_token,
+                    )
+                except Exception as error:
+                    if attempt == max_attempts:
+                        print(
+                            f"❌ {self.account_name}: Check-in network request failed "
+                            f"after {max_attempts} attempts - {error}"
+                        )
+                        return {
+                            "success": False,
+                            "error": f"Check-in network request failed - {error}",
+                        }
+                    delay = attempt * 5
+                    print(
+                        f"⚠️ {self.account_name}: Check-in network request failed "
+                        f"(attempt {attempt}/{max_attempts}), retrying in {delay}s - {error}"
+                    )
+                    await asyncio.sleep(delay)
+
+            return {"success": False, "error": "Check-in network request failed"}
+
+        result = await execute_with_network_retry()
         if not result.get("turnstile_required"):
             return result
         if not self.provider_config.turnstile_check:
@@ -863,7 +893,7 @@ class CheckIn:
         token, turnstile_cookies, turnstile_headers = solution
         session.cookies.update(turnstile_cookies)
         headers.update(turnstile_headers)
-        return self.execute_check_in(session, headers, api_user, turnstile_token=token)
+        return await execute_with_network_retry(turnstile_token=token)
 
     async def execute_topup(
         self,

@@ -2,7 +2,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -98,6 +98,23 @@ def test_github_oauth_browser_keeps_account_proxy(monkeypatch):
     assert 'proxy=self.proxy_config' in signin_source
     assert "Got auth state for GitHub: {auth_state_result['state']}" not in checkin_source
     assert 'Using client_id: {client_id}, auth_state: {auth_state}' not in signin_source
+
+
+def test_seekai_checkin_retries_transient_network_error(monkeypatch):
+    provider = _providers(monkeypatch)['seekai']
+    checkin = CheckIn('SeekAI', AccountConfig(provider='seekai'), provider)
+    success_response = MagicMock()
+    success_response.status_code = 200
+    success_response.json.return_value = {'success': True}
+    session = MagicMock()
+    session.post.side_effect = [RuntimeError('TLS connect error'), success_response]
+
+    with patch('checkin.asyncio.sleep', new=AsyncMock()) as sleep:
+        result = asyncio.run(checkin.execute_check_in_with_turnstile(session, {}, None))
+
+    assert result['success'] is True
+    assert session.post.call_count == 2
+    sleep.assert_awaited_once_with(5)
 
 
 def test_seekai_workflow_requires_six_pats_and_reuses_vmess_proxy():
