@@ -105,10 +105,12 @@ def test_seekai_workflow_uses_pat_and_reuses_vmess_proxy():
     ).read_text(encoding='utf-8')
 
     assert 'SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}' in workflow
+    assert 'GITHUB_TOKEN: ${{ github.token }}' in workflow
     assert 'SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}' in workflow
     assert 'provider = "seekai"' in workflow
     assert 'system_access_token = $env:SEEKAI_ACCESS_TOKEN' in workflow
     assert 'Write-Output "::add-mask::$env:SEEKAI_ACCESS_TOKEN"' in workflow
+    assert "headers={'Authorization': f\\\"Bearer {os.environ.get('GITHUB_TOKEN', '')}\\\"}" in workflow
     assert 'seekai-storage-' not in workflow
     assert 'REQUIRED_ACCOUNT_SUCCESSES: "1"' in workflow
     assert 'mihomoVersion = "v1.19.30"' in workflow

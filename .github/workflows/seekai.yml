@@ -19,6 +19,7 @@ jobs:
       contents: read
     env:
       PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ github.token }}
       SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}
       SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
       REQUIRED_ACCOUNT_SUCCESSES: "1"
@@ -59,6 +60,24 @@ jobs:
         shell: pwsh
         run: |
           uv sync
+          @'
+          import os
+          from pathlib import Path
+
+          import camoufox.pkgman as pkgman
+
+          path = Path(pkgman.__file__)
+          source = path.read_text(encoding="utf-8")
+          original = "resp = requests.get(self.api_url, timeout=20)"
+          authenticated = (
+              "resp = requests.get(self.api_url, timeout=20, "
+              "headers={'Authorization': f\"Bearer {os.environ.get('GITHUB_TOKEN', '')}\"})"
+          )
+          if original in source:
+              path.write_text(source.replace(original, authenticated), encoding="utf-8")
+          elif authenticated not in source:
+              raise RuntimeError("Camoufox downloader layout changed")
+          '@ | uv run python -
           uv run camoufox fetch
 
       - name: 生成 SeekAI 账号配置
