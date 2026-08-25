@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from checkin import CheckIn
+from main import strict_account_exit_code
 from utils.config import AccountConfig, AppConfig, OAuthAccountConfig
 
 
@@ -230,3 +231,28 @@ def test_tabitoken_workflow_starts_pinned_local_vmess_proxy():
     assert 'VMESS_EGRESS_CHANGED=True' in workflow
     assert '$env:PROXY = \'{"server":"http://127.0.0.1:7890"}\'' in workflow
     assert "qualification-isbn-improvements-governments.trycloudflare.com" not in workflow
+
+
+def test_tabitoken_workflow_requires_six_access_tokens():
+    workflow = (
+        Path(__file__).parent.parent / ".github" / "workflows" / "tabitoken.yml"
+    ).read_text(encoding="utf-8")
+
+    assert workflow.count("${{ secrets.TABITOKEN_ACCESS_TOKEN") == 6
+    for index in range(2, 7):
+        assert f"TABITOKEN_ACCESS_TOKEN_{index}:" in workflow
+    assert "$accountObjects.Count -ne 6" in workflow
+    assert "[string]::IsNullOrWhiteSpace($token)" in workflow
+    assert 'Write-Output "::add-mask::$token"' in workflow
+    assert "$uniqueTokens.Add($token)" in workflow
+    assert 'REQUIRED_ACCOUNT_SUCCESSES: "6"' in workflow
+    assert 'Write-Output "TABITOKEN_SUCCESS_COUNT=6/6"' in workflow
+    assert "Select-String -LiteralPath $checkinLog" not in workflow
+    assert "if: always() && (inputs.debug == true || vars.DEBUG == 'true')" in workflow
+
+
+def test_strict_account_exit_code():
+    assert strict_account_exit_code(6, 6, 6) == 0
+    assert strict_account_exit_code(5, 6, 6) == 1
+    assert strict_account_exit_code(0, 6, 6) == 1
+    assert strict_account_exit_code(6, 7, 6) == 1

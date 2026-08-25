@@ -20,10 +20,13 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       TABITOKEN_ACCESS_TOKEN: ${{ secrets.TABITOKEN_ACCESS_TOKEN }}
+      TABITOKEN_ACCESS_TOKEN_2: ${{ secrets.TABITOKEN_ACCESS_TOKEN_2 }}
+      TABITOKEN_ACCESS_TOKEN_3: ${{ secrets.TABITOKEN_ACCESS_TOKEN_3 }}
+      TABITOKEN_ACCESS_TOKEN_4: ${{ secrets.TABITOKEN_ACCESS_TOKEN_4 }}
+      TABITOKEN_ACCESS_TOKEN_5: ${{ secrets.TABITOKEN_ACCESS_TOKEN_5 }}
+      TABITOKEN_ACCESS_TOKEN_6: ${{ secrets.TABITOKEN_ACCESS_TOKEN_6 }}
       TABITOKEN_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      ACCOUNTS_GITHUB: ${{ secrets.ACCOUNTS_GITHUB }}
-      PROVIDERS: ${{ secrets.PROVIDERS }}
-      STORATE_STATES_GITHUB: ${{ secrets.STORATE_STATES_GITHUB }}
+      REQUIRED_ACCOUNT_SUCCESSES: "6"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -73,17 +76,35 @@ jobs:
       - name: 生成 TaBi Token 账号配置
         shell: pwsh
         run: |
-          if ($env:TABITOKEN_ACCESS_TOKEN) {
-            $accounts = ConvertTo-Json -Compress -InputObject @(@{
-              name = "TaBi Token"
+          $secretNames = @(
+            "TABITOKEN_ACCESS_TOKEN",
+            "TABITOKEN_ACCESS_TOKEN_2",
+            "TABITOKEN_ACCESS_TOKEN_3",
+            "TABITOKEN_ACCESS_TOKEN_4",
+            "TABITOKEN_ACCESS_TOKEN_5",
+            "TABITOKEN_ACCESS_TOKEN_6"
+          )
+          $accountObjects = @()
+          $uniqueTokens = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+          )
+          for ($index = 0; $index -lt $secretNames.Count; $index++) {
+            $token = [System.Environment]::GetEnvironmentVariable($secretNames[$index])
+            if ([string]::IsNullOrWhiteSpace($token)) { continue }
+            Write-Output "::add-mask::$token"
+            if (-not $uniqueTokens.Add($token)) {
+              throw "TaBi Token 账号 Secret 重复：$($secretNames[$index])"
+            }
+            $accountObjects += [ordered]@{
+              name = "TaBi Token $($index + 1)"
               provider = "tabitoken"
-              system_access_token = $env:TABITOKEN_ACCESS_TOKEN
-            })
-          } elseif ($env:ACCOUNTS_GITHUB) {
-            $accounts = "[]"
-          } else {
-            throw "请配置 TABITOKEN_ACCESS_TOKEN 或 ACCOUNTS_GITHUB"
+              system_access_token = $token
+            }
           }
+          if ($accountObjects.Count -ne 6) {
+            throw "TaBi Token 账号 Secret 仅配置 $($accountObjects.Count)/6"
+          }
+          $accounts = ConvertTo-Json -Compress -InputObject @($accountObjects)
           "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: 通过 VMess 执行 TaBi Token 签到
@@ -150,6 +171,8 @@ jobs:
             $env:PROXY = '{"server":"http://127.0.0.1:7890"}'
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
+            if ($checkinExit -ne 0) { throw "TaBi Token 六账号签到未全部成功" }
+            Write-Output "TABITOKEN_SUCCESS_COUNT=6/6"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id
@@ -165,7 +188,7 @@ jobs:
           key: tabitoken-storage-${{ github.run_id }}
 
       - name: 保存调试日志
-        if: always()
+        if: always() && (inputs.debug == true || vars.DEBUG == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: tabitoken-${{ github.run_number }}

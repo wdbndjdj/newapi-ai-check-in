@@ -6,17 +6,32 @@
 import asyncio
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime
+
 from dotenv import load_dotenv
+
+from checkin import CheckIn
+from utils.balance_hash import load_balance_hash, save_balance_hash
 from utils.config import AppConfig
 from utils.notify import notify
-from utils.balance_hash import load_balance_hash, save_balance_hash
-from checkin import CheckIn
 
 load_dotenv(override=True)
 
 BALANCE_HASH_FILE = "balance_hash.txt"
+
+
+def strict_account_exit_code(
+    successful_accounts: int,
+    loaded_accounts: int,
+    required_accounts: int,
+) -> int:
+    """Return success only when the exact required account set succeeded."""
+    return int(
+        loaded_accounts != required_accounts
+        or successful_accounts != required_accounts
+    )
 
 
 def generate_balance_hash(balances: dict) -> str:
@@ -54,11 +69,27 @@ async def main():
     
     print(f"⚙️ Found {len(app_config.accounts)} account(s)")
 
+    required_accounts = None
+    required_accounts_raw = os.getenv("REQUIRED_ACCOUNT_SUCCESSES", "").strip()
+    if required_accounts_raw:
+        try:
+            required_accounts = int(required_accounts_raw)
+        except ValueError:
+            print("❌ REQUIRED_ACCOUNT_SUCCESSES must be a positive integer")
+            sys.exit(1)
+        if required_accounts <= 0:
+            print("❌ REQUIRED_ACCOUNT_SUCCESSES must be a positive integer")
+            sys.exit(1)
+        if len(app_config.accounts) != required_accounts:
+            print(f"❌ Loaded account count {len(app_config.accounts)}/{required_accounts}")
+            sys.exit(1)
+
     # 加载余额hash
     last_balance_hash = load_balance_hash(BALANCE_HASH_FILE)
 
     # 为每个账号执行签到
     success_count = 0
+    successful_account_count = 0
     total_count = 0
     notification_content = []
     current_balances = {}
@@ -118,6 +149,7 @@ async def main():
                     account_result += f"    🔺 {str(error_msg)}\n"
 
             if account_success:
+                successful_account_count += 1
                 current_balances[account_key] = this_account_balances
 
             # 如果所有认证方式都失败，需要通知
@@ -190,7 +222,16 @@ async def main():
     else:
         print("ℹ️ All accounts successful and no balance changes detected, notification skipped")
 
-    # 设置退出码
+    # 设置退出码。专用 workflow 可要求固定数量的账号全部成功。
+    if required_accounts is not None:
+        print(f"STRICT_ACCOUNT_SUCCESS_COUNT={successful_account_count}/{required_accounts}")
+        sys.exit(
+            strict_account_exit_code(
+                successful_account_count,
+                len(app_config.accounts),
+                required_accounts,
+            )
+        )
     sys.exit(0 if success_count > 0 else 1)
 
 
