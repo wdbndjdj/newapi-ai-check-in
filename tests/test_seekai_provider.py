@@ -99,15 +99,17 @@ def test_github_oauth_browser_keeps_account_proxy(monkeypatch):
     assert "Got auth state for GitHub: {auth_state_result['state']}" not in checkin_source
     assert 'Using client_id: {client_id}, auth_state: {auth_state}' not in signin_source
 
-def test_seekai_workflow_reuses_existing_github_and_vmess_proxy():
+def test_seekai_workflow_uses_pat_and_reuses_vmess_proxy():
     workflow = (
         Path(__file__).parent.parent / '.github' / 'workflows' / 'seekai.yml'
     ).read_text(encoding='utf-8')
 
-    assert 'EXISTING_ACCOUNTS: ${{ secrets.ACCOUNTS }}' in workflow
+    assert 'SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}' in workflow
     assert 'SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}' in workflow
     assert 'provider = "seekai"' in workflow
-    assert 'github = $source.github' in workflow
+    assert 'system_access_token = $env:SEEKAI_ACCESS_TOKEN' in workflow
+    assert 'Write-Output "::add-mask::$env:SEEKAI_ACCESS_TOKEN"' in workflow
+    assert 'seekai-storage-' not in workflow
     assert 'REQUIRED_ACCOUNT_SUCCESSES: "1"' in workflow
     assert 'mihomoVersion = "v1.19.30"' in workflow
     assert (

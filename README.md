@@ -321,8 +321,9 @@ GitHub Environment Secret `TABITOKEN_CLASH_CONFIG`。运行时会下载固定版
 
 内置 `seekai` provider 对接 `https://seekai.cc` 的新版 New API 会话鉴权和
 `/api/user/checkin` 接口。`.github/workflows/seekai.yml` 每天北京时间 **09:27** 运行，
-会从现有 `ACCOUNTS` Environment Secret 中复用第一个包含用户名和密码的 GitHub 登录配置，
-生成只含一个 SeekAI 账号的临时配置；凭据值只在 Actions 内存与掩码环境中使用。
+使用 SeekAI **个人资料 -> 安全 -> 访问令牌** 中生成的长期令牌。将该令牌保存为 production
+Environment Secret `SEEKAI_ACCESS_TOKEN`；workflow 会生成只含一个 SeekAI 账号的临时配置，
+令牌只在 Actions 内存与掩码环境中使用，不写入仓库文件或浏览器状态缓存。
 
 SeekAI workflow 直接复用 `TABITOKEN_CLASH_CONFIG` 中已经配置的 VMess 节点。流程会先校验
 Mihomo 下载文件和代理配置，再确认代理出口与直连出口不同，最后才通过本地

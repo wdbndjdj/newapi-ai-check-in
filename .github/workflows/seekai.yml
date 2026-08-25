@@ -19,7 +19,7 @@ jobs:
       contents: read
     env:
       PYTHONIOENCODING: utf-8
-      EXISTING_ACCOUNTS: ${{ secrets.ACCOUNTS }}
+      SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}
       SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
       REQUIRED_ACCOUNT_SUCCESSES: "1"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
@@ -61,37 +61,17 @@ jobs:
           uv sync
           uv run camoufox fetch
 
-      - name: 恢复 GitHub 登录状态
-        uses: actions/cache/restore@v4
-        with:
-          path: storage-states
-          key: seekai-storage-${{ github.run_id }}
-          restore-keys: seekai-storage-
-
       - name: 生成 SeekAI 账号配置
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:EXISTING_ACCOUNTS)) {
-            throw "现有 ACCOUNTS Secret 未配置"
+          if ([string]::IsNullOrWhiteSpace($env:SEEKAI_ACCESS_TOKEN)) {
+            throw "请配置 SEEKAI_ACCESS_TOKEN"
           }
-          $existing = @($env:EXISTING_ACCOUNTS | ConvertFrom-Json)
-          $source = $existing | Where-Object {
-            $null -ne $_.github -and $_.github -ne $false
-          } | Select-Object -First 1
-          if (-not $source) {
-            throw "现有 ACCOUNTS Secret 中没有可复用的 GitHub 登录账号"
-          }
-          if ($source.github -is [bool]) {
-            throw "SeekAI 需要 ACCOUNTS Secret 中包含 GitHub 用户名和密码，而不是布尔引用"
-          }
-          foreach ($credential in @($source.github)) {
-            if ($credential.username) { Write-Output "::add-mask::$($credential.username)" }
-            if ($credential.password) { Write-Output "::add-mask::$($credential.password)" }
-          }
+          Write-Output "::add-mask::$env:SEEKAI_ACCESS_TOKEN"
           $account = [ordered]@{
             name = "SeekAI"
             provider = "seekai"
-            github = $source.github
+            system_access_token = $env:SEEKAI_ACCESS_TOKEN
           }
           $accounts = ConvertTo-Json -Compress -Depth 8 -InputObject @($account)
           "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -168,13 +148,6 @@ jobs:
             }
           }
           if ($checkinExit -ne 0) { exit $checkinExit }
-
-      - name: 保存 GitHub 登录状态
-        if: always() && hashFiles('storage-states/*.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: storage-states
-          key: seekai-storage-${{ github.run_id }}
 
       - name: 保存调试日志
         if: always() && (inputs.debug == true || vars.DEBUG == 'true')
