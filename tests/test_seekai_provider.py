@@ -122,15 +122,15 @@ def test_seekai_workflow_requires_six_pats_and_reuses_vmess_proxy():
         Path(__file__).parent.parent / '.github' / 'workflows' / 'seekai.yml'
     ).read_text(encoding='utf-8')
 
-    assert workflow.count('${{ secrets.SEEKAI_ACCESS_TOKEN') == 6
+    assert workflow.count('${{ secrets.SEEKAI_ACCESS_TOKEN') == 12
     assert 'SEEKAI_ACCESS_TOKEN: ${{ secrets.SEEKAI_ACCESS_TOKEN }}' in workflow
-    for index in range(2, 7):
+    for index in range(2, 13):
         secret_binding = (
             f'SEEKAI_ACCESS_TOKEN_{index}: '
             f'${{{{ secrets.SEEKAI_ACCESS_TOKEN_{index} }}}}'
         )
         assert secret_binding in workflow
-    assert 'SEEKAI_ACCESS_TOKEN_7:' not in workflow
+    assert 'SEEKAI_ACCESS_TOKEN_13:' not in workflow
     assert 'GITHUB_TOKEN: ${{ github.token }}' in workflow
     assert 'SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}' in workflow
     assert 'provider = "seekai"' in workflow
@@ -146,11 +146,11 @@ def test_seekai_workflow_requires_six_pats_and_reuses_vmess_proxy():
     assert workflow.count('Start-Process -FilePath $mihomoExe') == 1
     assert workflow.count('uv run python -u main.py') == 1
     assert workflow.count('$env:PROXY =') == 1
-    for index in range(2, 7):
+    for index in range(2, 13):
         assert workflow.count(f'SEEKAI_ACCESS_TOKEN_{index}') >= 2
     assert "headers={'Authorization': f\\\"Bearer {os.environ.get('GITHUB_TOKEN', '')}\\\"}" in workflow
     assert 'seekai-storage-' not in workflow
-    assert 'REQUIRED_ACCOUNT_SUCCESSES: "6"' in workflow
+    assert 'REQUIRED_ACCOUNT_SUCCESSES: "12"' in workflow
     assert 'mihomoVersion = "v1.19.30"' in workflow
     assert (
         'mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"'
@@ -159,5 +159,5 @@ def test_seekai_workflow_requires_six_pats_and_reuses_vmess_proxy():
     assert '& $mihomoExe -t -f $configPath' in workflow
     assert 'VMESS_EGRESS_CHANGED=True' in workflow
     assert '$env:PROXY = \'{"server":"http://127.0.0.1:7890"}\'' in workflow
-    assert 'SEEKAI_SUCCESS_COUNT=6/6' in workflow
+    assert 'SEEKAI_SUCCESS_COUNT=12/12' in workflow
     assert 'qualification-isbn-improvements-governments.trycloudflare.com' not in workflow

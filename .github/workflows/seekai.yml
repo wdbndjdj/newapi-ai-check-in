@@ -26,8 +26,14 @@ jobs:
       SEEKAI_ACCESS_TOKEN_4: ${{ secrets.SEEKAI_ACCESS_TOKEN_4 }}
       SEEKAI_ACCESS_TOKEN_5: ${{ secrets.SEEKAI_ACCESS_TOKEN_5 }}
       SEEKAI_ACCESS_TOKEN_6: ${{ secrets.SEEKAI_ACCESS_TOKEN_6 }}
+      SEEKAI_ACCESS_TOKEN_7: ${{ secrets.SEEKAI_ACCESS_TOKEN_7 }}
+      SEEKAI_ACCESS_TOKEN_8: ${{ secrets.SEEKAI_ACCESS_TOKEN_8 }}
+      SEEKAI_ACCESS_TOKEN_9: ${{ secrets.SEEKAI_ACCESS_TOKEN_9 }}
+      SEEKAI_ACCESS_TOKEN_10: ${{ secrets.SEEKAI_ACCESS_TOKEN_10 }}
+      SEEKAI_ACCESS_TOKEN_11: ${{ secrets.SEEKAI_ACCESS_TOKEN_11 }}
+      SEEKAI_ACCESS_TOKEN_12: ${{ secrets.SEEKAI_ACCESS_TOKEN_12 }}
       SEEKAI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      REQUIRED_ACCOUNT_SUCCESSES: "6"
+      REQUIRED_ACCOUNT_SUCCESSES: "12"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -94,7 +100,13 @@ jobs:
             "SEEKAI_ACCESS_TOKEN_3",
             "SEEKAI_ACCESS_TOKEN_4",
             "SEEKAI_ACCESS_TOKEN_5",
-            "SEEKAI_ACCESS_TOKEN_6"
+            "SEEKAI_ACCESS_TOKEN_6",
+            "SEEKAI_ACCESS_TOKEN_7",
+            "SEEKAI_ACCESS_TOKEN_8",
+            "SEEKAI_ACCESS_TOKEN_9",
+            "SEEKAI_ACCESS_TOKEN_10",
+            "SEEKAI_ACCESS_TOKEN_11",
+            "SEEKAI_ACCESS_TOKEN_12"
           )
           $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
           if ($requiredCount -ne $secretNames.Count) {
@@ -192,7 +204,7 @@ jobs:
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
             if ($checkinExit -ne 0) { throw "SeekAI 签到失败" }
-            Write-Output "SEEKAI_SUCCESS_COUNT=6/6"
+            Write-Output "SEEKAI_SUCCESS_COUNT=12/12"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id
