@@ -308,6 +308,11 @@ GitHub 仓库的 **Settings -> Environments -> production -> Environment secrets
 **TaBi Token 自动签到** 后点击 **Run workflow** 手动验证。流程会先查当天状态，避免重复签到；
 接口要求 Turnstile 时会获取验证令牌并重试一次。
 
+该专用 workflow 支持 VMess：把只含目标节点、监听 `mixed-port: 7890` 的 Mihomo 配置保存为
+GitHub Environment Secret `TABITOKEN_CLASH_CONFIG`。运行时会下载固定版本并校验 SHA-256，
+验证配置和代理出口后，只为本次签到设置 `PROXY={"server":"http://127.0.0.1:7890"}`；
+节点服务器、UUID、SNI 与 WebSocket 路径不会写入仓库或 Actions 日志。
+
 ### 4. 启用 GitHub Actions
 
 1. 在你的仓库中，点击 "Actions" 选项卡

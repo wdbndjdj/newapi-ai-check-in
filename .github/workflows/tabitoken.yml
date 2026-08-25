@@ -20,9 +20,9 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       TABITOKEN_ACCESS_TOKEN: ${{ secrets.TABITOKEN_ACCESS_TOKEN }}
+      TABITOKEN_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
       ACCOUNTS_GITHUB: ${{ secrets.ACCOUNTS_GITHUB }}
       PROVIDERS: ${{ secrets.PROVIDERS }}
-      PROXY: ${{ secrets.PROXY }}
       STORATE_STATES_GITHUB: ${{ secrets.STORATE_STATES_GITHUB }}
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
@@ -86,9 +86,76 @@ jobs:
           }
           "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: 执行 TaBi Token 签到
+      - name: 通过 VMess 执行 TaBi Token 签到
         shell: pwsh
-        run: uv run python -u main.py
+        run: |
+          if (-not $env:TABITOKEN_CLASH_CONFIG) {
+            throw "请配置 TABITOKEN_CLASH_CONFIG"
+          }
+
+          $mihomoVersion = "v1.19.30"
+          $mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"
+          $mihomoDir = Join-Path $env:RUNNER_TEMP "mihomo"
+          $mihomoZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
+          $configPath = Join-Path $env:RUNNER_TEMP "tabitoken-vmess.yaml"
+          $downloadUrl = "https://github.com/MetaCubeX/mihomo/releases/download/$mihomoVersion/mihomo-windows-amd64-compatible-$mihomoVersion.zip"
+
+          New-Item -ItemType Directory -Force -Path $mihomoDir | Out-Null
+          [System.IO.File]::WriteAllText(
+            $configPath,
+            $env:TABITOKEN_CLASH_CONFIG,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          curl.exe -fsSL --retry 3 $downloadUrl -o $mihomoZip
+          if ($LASTEXITCODE -ne 0) { throw "Mihomo 下载失败" }
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $mihomoZip).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $mihomoSha256) { throw "Mihomo 校验失败" }
+          Expand-Archive -LiteralPath $mihomoZip -DestinationPath $mihomoDir -Force
+          $mihomoExe = (Get-ChildItem -LiteralPath $mihomoDir -Filter "mihomo*.exe" | Select-Object -First 1).FullName
+          if (-not $mihomoExe) { throw "Mihomo 可执行文件不存在" }
+
+          & $mihomoExe -t -f $configPath
+          if ($LASTEXITCODE -ne 0) { throw "VMess 配置校验失败" }
+
+          $stdoutPath = Join-Path $env:RUNNER_TEMP "mihomo.stdout.log"
+          $stderrPath = Join-Path $env:RUNNER_TEMP "mihomo.stderr.log"
+          $mihomo = Start-Process -FilePath $mihomoExe `
+            -ArgumentList @("-f", $configPath) `
+            -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+          try {
+            $proxyReady = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                $client = [System.Net.Sockets.TcpClient]::new()
+                $client.Connect("127.0.0.1", 7890)
+                $client.Dispose()
+                $proxyReady = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $proxyReady) { throw "VMess 本地代理未启动" }
+
+            $directIp = (curl.exe -fsSL --max-time 20 "https://api.ipify.org").Trim()
+            $proxyIp = (curl.exe -fsSL --max-time 30 --proxy "http://127.0.0.1:7890" "https://api.ipify.org").Trim()
+            if (-not $directIp -or -not $proxyIp -or $directIp -eq $proxyIp) {
+              throw "VMess 出口验证失败"
+            }
+            Write-Output "VMESS_EGRESS_CHANGED=True"
+
+            $env:PROXY = '{"server":"http://127.0.0.1:7890"}'
+            uv run python -u main.py
+            $checkinExit = $LASTEXITCODE
+          } finally {
+            if ($mihomo -and -not $mihomo.HasExited) {
+              Stop-Process -Id $mihomo.Id
+            }
+          }
+          if ($checkinExit -ne 0) { exit $checkinExit }
 
       - name: 保存 GitHub 登录状态
         if: always() && hashFiles('storage-states/*.json') != ''

@@ -213,3 +213,20 @@ def test_turnstile_missing_message_on_403_requests_challenge(monkeypatch):
         "error": "Unknown error",
         "turnstile_required": True,
     }
+
+
+def test_tabitoken_workflow_starts_pinned_local_vmess_proxy():
+    workflow = (
+        Path(__file__).parent.parent / ".github" / "workflows" / "tabitoken.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "TABITOKEN_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}" in workflow
+    assert 'mihomoVersion = "v1.19.30"' in workflow
+    assert (
+        'mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"'
+        in workflow
+    )
+    assert '& $mihomoExe -t -f $configPath' in workflow
+    assert 'VMESS_EGRESS_CHANGED=True' in workflow
+    assert '$env:PROXY = \'{"server":"http://127.0.0.1:7890"}\'' in workflow
+    assert "qualification-isbn-improvements-governments.trycloudflare.com" not in workflow
