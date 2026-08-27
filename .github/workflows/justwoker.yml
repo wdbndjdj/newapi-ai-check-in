@@ -21,8 +21,13 @@ jobs:
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ github.token }}
       JUSTWOKER_ACCESS_TOKEN: ${{ secrets.JUSTWOKER_ACCESS_TOKEN }}
+      JUSTWOKER_ACCESS_TOKEN_2: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_2 }}
+      JUSTWOKER_ACCESS_TOKEN_3: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_3 }}
+      JUSTWOKER_ACCESS_TOKEN_4: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_4 }}
+      JUSTWOKER_ACCESS_TOKEN_5: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_5 }}
+      JUSTWOKER_ACCESS_TOKEN_6: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_6 }}
       JUSTWOKER_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      REQUIRED_ACCOUNT_SUCCESSES: "1"
+      REQUIRED_ACCOUNT_SUCCESSES: "6"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -84,7 +89,12 @@ jobs:
         shell: pwsh
         run: |
           $secretNames = @(
-            "JUSTWOKER_ACCESS_TOKEN"
+            "JUSTWOKER_ACCESS_TOKEN",
+            "JUSTWOKER_ACCESS_TOKEN_2",
+            "JUSTWOKER_ACCESS_TOKEN_3",
+            "JUSTWOKER_ACCESS_TOKEN_4",
+            "JUSTWOKER_ACCESS_TOKEN_5",
+            "JUSTWOKER_ACCESS_TOKEN_6"
           )
           $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
           if ($requiredCount -ne $secretNames.Count) {
@@ -182,7 +192,7 @@ jobs:
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
             if ($checkinExit -ne 0) { throw "JustWoker 签到失败" }
-            Write-Output "JUSTWOKER_SUCCESS_COUNT=1/1"
+            Write-Output "JUSTWOKER_SUCCESS_COUNT=6/6"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id
