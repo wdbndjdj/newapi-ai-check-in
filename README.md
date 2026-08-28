@@ -366,6 +366,23 @@ Environment Secrets 中，不写入仓库文件。
 代理配置和出口变化后，通过本地 `http://127.0.0.1:7890` 查询当日状态并执行签到；已签到账号
 直接成功退出，六个账号顺序复用同一个代理出口。
 
+#### 3.13 NOFX 自动签到
+
+NOFX 使用邮箱 Magic Link 登录，没有可长期复用的密码或公开签到 Token。工作流通过
+Playwright 复用你手动登录后导出的会话状态，每天只打开一次任务页并点击可见的签到按钮。
+
+首次配置步骤：
+
+1. 本地运行 `uv run python nofx_checkin.py --capture-state nofx-state.json`。
+2. 在打开的浏览器中输入邮箱并完成 Magic Link 登录，回到终端按回车保存状态。
+3. 将文件编码为 base64 并写入 `production` Environment Secret `NOFX_STORAGE_STATE_B64`：
+   `[Convert]::ToBase64String([IO.File]::ReadAllBytes('.\\nofx-state.json'))`（PowerShell）。
+4. 启用 **NOFX 自动签到** workflow，并先手动运行一次验证。
+
+会话状态等同于登录凭据，只能放在 GitHub Environment Secret，禁止提交到仓库、上传
+Artifact 或输出到日志。会话过期后工作流会失败并提示重新导出；不要通过高频请求或绕过
+站点验证来维持会话。
+
 ### 4. 启用 GitHub Actions
 
 1. 在你的仓库中，点击 "Actions" 选项卡
