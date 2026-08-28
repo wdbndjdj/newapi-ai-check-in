@@ -1,0 +1,212 @@
+name: 北栀自动签到
+
+on:
+  schedule:
+    - cron: "47 1 * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 保存调试截图和页面
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  checkin:
+    runs-on: windows-2022
+    environment: production
+    permissions:
+      contents: read
+    env:
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ github.token }}
+      BEIZHI_ACCESS_TOKEN: ${{ secrets.BEIZHI_ACCESS_TOKEN }}
+      BEIZHI_ACCESS_TOKEN_2: ${{ secrets.BEIZHI_ACCESS_TOKEN_2 }}
+      BEIZHI_ACCESS_TOKEN_3: ${{ secrets.BEIZHI_ACCESS_TOKEN_3 }}
+      BEIZHI_ACCESS_TOKEN_4: ${{ secrets.BEIZHI_ACCESS_TOKEN_4 }}
+      BEIZHI_ACCESS_TOKEN_5: ${{ secrets.BEIZHI_ACCESS_TOKEN_5 }}
+      BEIZHI_ACCESS_TOKEN_6: ${{ secrets.BEIZHI_ACCESS_TOKEN_6 }}
+      BEIZHI_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
+      REQUIRED_ACCOUNT_SUCCESSES: "6"
+      DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
+      DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      CUSTOM_SMTP_SERVER: ${{ secrets.CUSTOM_SMTP_SERVER }}
+      PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      SERVERPUSHKEY: ${{ secrets.SERVERPUSHKEY }}
+      FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+      WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 缓存依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: 安装依赖和浏览器
+        shell: pwsh
+        run: |
+          uv sync
+          @'
+          import os
+          from pathlib import Path
+
+          import camoufox.pkgman as pkgman
+
+          path = Path(pkgman.__file__)
+          source = path.read_text(encoding="utf-8")
+          original = "resp = requests.get(self.api_url, timeout=20)"
+          authenticated = (
+              "resp = requests.get(self.api_url, timeout=20, "
+              "headers={'Authorization': f\"Bearer {os.environ.get('GITHUB_TOKEN', '')}\"})"
+          )
+          if original in source:
+              path.write_text(source.replace(original, authenticated), encoding="utf-8")
+          elif authenticated not in source:
+              raise RuntimeError("Camoufox downloader layout changed")
+          '@ | uv run python -
+          uv run camoufox fetch
+
+      - name: 生成北栀账号配置
+        shell: pwsh
+        run: |
+          $secretNames = @(
+            "BEIZHI_ACCESS_TOKEN",
+            "BEIZHI_ACCESS_TOKEN_2",
+            "BEIZHI_ACCESS_TOKEN_3",
+            "BEIZHI_ACCESS_TOKEN_4",
+            "BEIZHI_ACCESS_TOKEN_5",
+            "BEIZHI_ACCESS_TOKEN_6"
+          )
+          $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
+          if ($requiredCount -ne $secretNames.Count) {
+            throw "北栀账号目标数量与 Secret 槽位数量不一致"
+          }
+          $accountObjects = @()
+          $uniqueTokens = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+          )
+          for ($index = 0; $index -lt $secretNames.Count; $index++) {
+            $rawToken = [System.Environment]::GetEnvironmentVariable($secretNames[$index])
+            if ([string]::IsNullOrWhiteSpace($rawToken)) { continue }
+            $token = $rawToken.Trim()
+            if ($token -ne $rawToken) {
+              throw "北栀账号 Secret 含首尾空格：$($secretNames[$index])"
+            }
+            Write-Output "::add-mask::$token"
+            if (-not $uniqueTokens.Add($token)) {
+              throw "北栀账号 Secret 重复：$($secretNames[$index])"
+            }
+            $accountObjects += [ordered]@{
+              name = "北栀 $($index + 1)"
+              provider = "beizhi"
+              system_access_token = $token
+            }
+          }
+          if ($accountObjects.Count -ne $requiredCount) {
+            throw "北栀账号 Secret 仅配置 $($accountObjects.Count)/$requiredCount"
+          }
+          $accounts = ConvertTo-Json -Compress -Depth 8 -InputObject @($accountObjects)
+          "ACCOUNTS=$accounts" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: 通过 VMess 执行北栀签到
+        shell: pwsh
+        run: |
+          if (-not $env:BEIZHI_CLASH_CONFIG) {
+            throw "请配置 TABITOKEN_CLASH_CONFIG（北栀复用同一代理）"
+          }
+
+          $mihomoVersion = "v1.19.30"
+          $mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"
+          $mihomoDir = Join-Path $env:RUNNER_TEMP "mihomo"
+          $mihomoZip = Join-Path $env:RUNNER_TEMP "mihomo.zip"
+          $configPath = Join-Path $env:RUNNER_TEMP "beizhi-vmess.yaml"
+          $downloadUrl = "https://github.com/MetaCubeX/mihomo/releases/download/$mihomoVersion/mihomo-windows-amd64-compatible-$mihomoVersion.zip"
+
+          New-Item -ItemType Directory -Force -Path $mihomoDir | Out-Null
+          [System.IO.File]::WriteAllText(
+            $configPath,
+            $env:BEIZHI_CLASH_CONFIG,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          curl.exe -fsSL --retry 3 $downloadUrl -o $mihomoZip
+          if ($LASTEXITCODE -ne 0) { throw "Mihomo 下载失败" }
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $mihomoZip).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $mihomoSha256) { throw "Mihomo 校验失败" }
+          Expand-Archive -LiteralPath $mihomoZip -DestinationPath $mihomoDir -Force
+          $mihomoExe = (Get-ChildItem -LiteralPath $mihomoDir -Filter "mihomo*.exe" | Select-Object -First 1).FullName
+          if (-not $mihomoExe) { throw "Mihomo 可执行文件不存在" }
+
+          & $mihomoExe -t -f $configPath
+          if ($LASTEXITCODE -ne 0) { throw "VMess 配置校验失败" }
+
+          $stdoutPath = Join-Path $env:RUNNER_TEMP "mihomo.stdout.log"
+          $stderrPath = Join-Path $env:RUNNER_TEMP "mihomo.stderr.log"
+          $mihomo = Start-Process -FilePath $mihomoExe `
+            -ArgumentList @("-f", $configPath) `
+            -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+
+          try {
+            $proxyReady = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                $client = [System.Net.Sockets.TcpClient]::new()
+                $client.Connect("127.0.0.1", 7890)
+                $client.Dispose()
+                $proxyReady = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $proxyReady) { throw "VMess 本地代理未启动" }
+
+            $directIp = (curl.exe -fsSL --max-time 20 "https://api.ipify.org").Trim()
+            $proxyIp = (curl.exe -fsSL --max-time 30 --proxy "http://127.0.0.1:7890" "https://api.ipify.org").Trim()
+            if (-not $directIp -or -not $proxyIp -or $directIp -eq $proxyIp) {
+              throw "VMess 出口验证失败"
+            }
+            Write-Output "VMESS_EGRESS_CHANGED=True"
+
+            $env:PROXY = '{"server":"http://127.0.0.1:7890"}'
+            uv run python -u main.py
+            $checkinExit = $LASTEXITCODE
+            if ($checkinExit -ne 0) { throw "北栀签到失败" }
+            Write-Output "BEIZHI_SUCCESS_COUNT=6/6"
+          } finally {
+            if ($mihomo -and -not $mihomo.HasExited) {
+              Stop-Process -Id $mihomo.Id
+            }
+          }
+          if ($checkinExit -ne 0) { exit $checkinExit }
+
+      - name: 保存调试日志
+        if: always() && (inputs.debug == true || vars.DEBUG == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: beizhi-${{ github.run_number }}
+          path: |
+            logs/
+            screenshots/
+          if-no-files-found: ignore
+          retention-days: 7

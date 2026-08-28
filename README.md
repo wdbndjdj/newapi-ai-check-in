@@ -185,7 +185,7 @@ Affs:
 #### 3.3 字段说明：
 
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
-- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`、`tabitoken`、`seekai`、`justwoker`，默认使用 `anyrouter`
+- `provider` (可选)：供应商，内置 `anyrouter`、`wong`、`huan666`、`x666`、`kfc`、`elysiver`、`hotaru`、`tabitoken`、`seekai`、`justwoker`、`beizhi`，默认使用 `anyrouter`
 - `proxy` (可选)：单个账号代理配置，支持 `http`、`socks5` 代理
 - `cookies`(可选)：用于身份验证的 cookies 数据
 - `system_access_token`(可选)：系统访问令牌，通过 `Authorization: Bearer <token>` 方式认证签到
@@ -350,6 +350,21 @@ Environment Secret `JUSTWOKER_ACCESS_TOKEN`；令牌只在 Actions 内存与掩�
 JustWoker workflow 复用 `TABITOKEN_CLASH_CONFIG` 中的 VMess 节点。流程会校验固定版本
 Mihomo 的 SHA-256、代理配置和出口变化，再通过本地 `http://127.0.0.1:7890` 查询当日状态并
 执行签到；当天已经签到时直接成功退出，避免重复领取。
+
+#### 3.12 北栀自动签到
+
+内置 `beizhi` provider 对接 `https://beizhi.sylu.cc` 的新版 New API Bearer 鉴权和
+`/api/user/checkin` 接口。`.github/workflows/beizhi.yml` 每天北京时间 **09:47** 运行，
+使用个人资料页 **安全 -> 访问令牌** 中生成的长期令牌。令牌只保存在 production
+Environment Secrets 中，不写入仓库文件。
+
+六账号模式依次使用 `BEIZHI_ACCESS_TOKEN`、`BEIZHI_ACCESS_TOKEN_2` 至
+`BEIZHI_ACCESS_TOKEN_6` 六个 production Environment Secrets。workflow 会拒绝缺失、空白、
+含首尾空格或重复的令牌，只有程序确认六个账号全部成功时任务才成功。
+
+北栀 workflow 复用 `TABITOKEN_CLASH_CONFIG` 中的 VMess 节点。流程校验 Mihomo 下载文件、
+代理配置和出口变化后，通过本地 `http://127.0.0.1:7890` 查询当日状态并执行签到；已签到账号
+直接成功退出，六个账号顺序复用同一个代理出口。
 
 ### 4. 启用 GitHub Actions
 
