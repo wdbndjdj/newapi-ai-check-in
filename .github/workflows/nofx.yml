@@ -74,5 +74,5 @@ jobs:
               exit 1
             fi
             echo "::add-mask::$secret_value"
-            NOFX_STORAGE_STATE_B64="$secret_value" NOFX_STORAGE_STATE_FILE= uv run python -u nofx_checkin.py
+            NOFX_STORAGE_STATE_B64="$secret_value" NOFX_STORAGE_STATE_FILE= NOFX_ACCOUNT_SLOT="$secret_name" uv run python -u nofx_checkin.py
           done

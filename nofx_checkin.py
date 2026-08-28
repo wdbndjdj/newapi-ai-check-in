@@ -37,7 +37,7 @@ def classify_checkin_button(text: str, disabled: bool) -> str | None:
 	if ALREADY_TEXT.search(normalized):
 		return 'already'
 	if disabled:
-		return None
+		return 'already'
 	return 'claim'
 
 
@@ -102,21 +102,17 @@ async def check_in() -> None:
 			if '/sign-in' in page.url:
 				raise RuntimeError('NOFX 会话已失效，请重新完成 Magic Link 登录并更新 Secret')
 
-			buttons = page.get_by_role('button')
-			candidate = None
-			for index in range(await buttons.count()):
-				button = buttons.nth(index)
-				if not await button.is_visible():
-					continue
-				text = await button.inner_text()
-				state_name = classify_checkin_button(text, await button.is_disabled())
-				if state_name == 'already':
-					print('NOFX_CHECKIN_STATUS=already')
-					return
-				if state_name == 'claim' and candidate is None:
-					candidate = button
-			if candidate is None:
+			daily_task = page.locator('article').filter(has_text='每日签到').first()
+			buttons = daily_task.get_by_role('button')
+			if await buttons.count() == 0:
 				raise RuntimeError('未找到可识别的 NOFX 签到按钮，页面结构可能已变化')
+			candidate = buttons.first()
+			state_name = classify_checkin_button(await candidate.inner_text(), await candidate.is_disabled())
+			if state_name == 'already':
+				print('NOFX_CHECKIN_STATUS=already_or_unavailable')
+				return
+			if state_name != 'claim':
+				raise RuntimeError('未找到可领取状态的 NOFX 签到按钮，页面结构可能已变化')
 
 			await candidate.click(timeout=30_000)
 			await page.wait_for_timeout(2_000)
@@ -124,13 +120,13 @@ async def check_in() -> None:
 			await page.wait_for_timeout(1_000)
 			if '/sign-in' in page.url:
 				raise RuntimeError('签到后会话跳回登录页，登录状态可能已失效')
-			for index in range(await buttons.count()):
-				button = buttons.nth(index)
-				if not await button.is_visible():
-					continue
-				if classify_checkin_button(await button.inner_text(), await button.is_disabled()) == 'already':
-					print('NOFX_CHECKIN_STATUS=credited_or_pending')
-					return
+			daily_task = page.locator('article').filter(has_text='每日签到').first()
+			buttons = daily_task.get_by_role('button')
+			if await buttons.count() and classify_checkin_button(
+				await buttons.first().inner_text(), await buttons.first().is_disabled()
+			) == 'already':
+				print('NOFX_CHECKIN_STATUS=credited_or_pending')
+				return
 			raise RuntimeError('点击签到后未确认页面显示已签到')
 		finally:
 			await context.close()
@@ -151,7 +147,8 @@ def main() -> None:
 		else:
 			asyncio.run(check_in())
 	except Exception as exc:
-		print(f'NOFX_CHECKIN_ERROR={exc}')
+		slot = os.getenv('NOFX_ACCOUNT_SLOT', 'NOFX_STORAGE_STATE_B64')
+		print(f'NOFX_CHECKIN_ERROR[{slot}]={exc}')
 		raise SystemExit(1) from exc
 
 
