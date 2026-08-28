@@ -5,6 +5,7 @@ __pycache__
 .ruff_cache
 screenshots
 storage-states
+nofx-state*.json
 logs
 balance_hash.txt
 balance_hash_*.txt

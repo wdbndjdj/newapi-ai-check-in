@@ -20,6 +20,15 @@ jobs:
     environment: production
     env:
       NOFX_STORAGE_STATE_B64: ${{ secrets.NOFX_STORAGE_STATE_B64 }}
+      NOFX_STORAGE_STATE_B64_2: ${{ secrets.NOFX_STORAGE_STATE_B64_2 }}
+      NOFX_STORAGE_STATE_B64_3: ${{ secrets.NOFX_STORAGE_STATE_B64_3 }}
+      NOFX_STORAGE_STATE_B64_4: ${{ secrets.NOFX_STORAGE_STATE_B64_4 }}
+      NOFX_STORAGE_STATE_B64_5: ${{ secrets.NOFX_STORAGE_STATE_B64_5 }}
+      NOFX_STORAGE_STATE_B64_6: ${{ secrets.NOFX_STORAGE_STATE_B64_6 }}
+      NOFX_STORAGE_STATE_B64_7: ${{ secrets.NOFX_STORAGE_STATE_B64_7 }}
+      NOFX_STORAGE_STATE_B64_8: ${{ secrets.NOFX_STORAGE_STATE_B64_8 }}
+      NOFX_STORAGE_STATE_B64_9: ${{ secrets.NOFX_STORAGE_STATE_B64_9 }}
+      NOFX_STORAGE_STATE_B64_10: ${{ secrets.NOFX_STORAGE_STATE_B64_10 }}
       NOFX_BASE_URL: https://nofx.one
       NOFX_LOCALE: zh-CN
 
@@ -43,4 +52,27 @@ jobs:
           uv run playwright install --with-deps chromium
 
       - name: 执行 NOFX 签到
-        run: uv run python -u nofx_checkin.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_names=(
+            NOFX_STORAGE_STATE_B64
+            NOFX_STORAGE_STATE_B64_2
+            NOFX_STORAGE_STATE_B64_3
+            NOFX_STORAGE_STATE_B64_4
+            NOFX_STORAGE_STATE_B64_5
+            NOFX_STORAGE_STATE_B64_6
+            NOFX_STORAGE_STATE_B64_7
+            NOFX_STORAGE_STATE_B64_8
+            NOFX_STORAGE_STATE_B64_9
+            NOFX_STORAGE_STATE_B64_10
+          )
+          for secret_name in "${secret_names[@]}"; do
+            secret_value="${!secret_name-}"
+            if [ -z "$secret_value" ]; then
+              echo "::error::缺少 GitHub Environment Secret $secret_name"
+              exit 1
+            fi
+            echo "::add-mask::$secret_value"
+            NOFX_STORAGE_STATE_B64="$secret_value" NOFX_STORAGE_STATE_FILE= uv run python -u nofx_checkin.py
+          done

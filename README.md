@@ -371,12 +371,14 @@ Environment Secrets 中，不写入仓库文件。
 NOFX 使用邮箱 Magic Link 登录，没有可长期复用的密码或公开签到 Token。工作流通过
 Playwright 复用你手动登录后导出的会话状态，每天只打开一次任务页并点击可见的签到按钮。
 
-首次配置步骤：
+首次配置步骤（10 个账号）：
 
-1. 本地运行 `uv run python nofx_checkin.py --capture-state nofx-state.json`。
+1. 本地分别运行 `uv run python nofx_checkin.py --capture-state nofx-state-1.json` 至
+   `nofx-state-10.json`（第一个文件也可命名为 `nofx-state.json`）。
 2. 在打开的浏览器中输入邮箱并完成 Magic Link 登录，回到终端按回车保存状态。
-3. 将文件编码为 base64 并写入 `production` Environment Secret `NOFX_STORAGE_STATE_B64`：
-   `[Convert]::ToBase64String([IO.File]::ReadAllBytes('.\\nofx-state.json'))`（PowerShell）。
+3. 将 10 个文件分别编码为 base64，写入 `production` Environment Secrets
+   `NOFX_STORAGE_STATE_B64`、`NOFX_STORAGE_STATE_B64_2` 至 `_10`：
+   `[Convert]::ToBase64String([IO.File]::ReadAllBytes('.\\nofx-state-1.json'))`（PowerShell）。
 4. 启用 **NOFX 自动签到** workflow，并先手动运行一次验证。
 
 会话状态等同于登录凭据，只能放在 GitHub Environment Secret，禁止提交到仓库、上传
