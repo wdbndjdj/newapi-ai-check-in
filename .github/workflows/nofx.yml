@@ -2,8 +2,8 @@ name: NOFX 自动签到
 
 on:
   schedule:
-    # 09:17 Asia/Shanghai (GitHub Actions cron is UTC).
-    - cron: '17 1 * * *'
+    # 00:00 Asia/Shanghai (GitHub Actions cron is UTC).
+    - cron: '0 16 * * *'
   workflow_dispatch: {}
 
 permissions:
