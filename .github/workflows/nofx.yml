@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     environment: production
     env:
-      NOFX_STORAGE_STATE_B64: ${{ secrets.NOFX_STORAGE_STATE_B64 }}
+      NOFX_STORAGE_STATE_B64_1: ${{ secrets.NOFX_STORAGE_STATE_B64_1 }}
       NOFX_STORAGE_STATE_B64_2: ${{ secrets.NOFX_STORAGE_STATE_B64_2 }}
       NOFX_STORAGE_STATE_B64_3: ${{ secrets.NOFX_STORAGE_STATE_B64_3 }}
       NOFX_STORAGE_STATE_B64_4: ${{ secrets.NOFX_STORAGE_STATE_B64_4 }}
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           secret_names=(
-            NOFX_STORAGE_STATE_B64
+            NOFX_STORAGE_STATE_B64_1
             NOFX_STORAGE_STATE_B64_2
             NOFX_STORAGE_STATE_B64_3
             NOFX_STORAGE_STATE_B64_4

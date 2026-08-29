@@ -377,7 +377,7 @@ Playwright 复用你手动登录后导出的会话状态，每天只打开一次
    `nofx-state-10.json`（第一个文件也可命名为 `nofx-state.json`）。
 2. 在打开的浏览器中输入邮箱并完成 Magic Link 登录，回到终端按回车保存状态。
 3. 将 10 个文件分别编码为 base64，写入 `production` Environment Secrets
-   `NOFX_STORAGE_STATE_B64`、`NOFX_STORAGE_STATE_B64_2` 至 `_10`：
+   `NOFX_STORAGE_STATE_B64_1` 至 `NOFX_STORAGE_STATE_B64_10`：
    `[Convert]::ToBase64String([IO.File]::ReadAllBytes('.\\nofx-state-1.json'))`（PowerShell）。
 4. 启用 **NOFX 自动签到** workflow，并先手动运行一次验证。
 

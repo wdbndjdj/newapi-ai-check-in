@@ -37,8 +37,7 @@ def test_load_storage_state_requires_cookie_array(monkeypatch):
 def test_workflow_uses_session_secret_and_daily_schedule():
 	workflow = (Path(__file__).parents[1] / '.github' / 'workflows' / 'nofx.yml').read_text(encoding='utf-8')
 	assert "cron: '17 1 * * *'" in workflow
-	assert 'NOFX_STORAGE_STATE_B64: ${{ secrets.NOFX_STORAGE_STATE_B64 }}' in workflow
-	for index in range(2, 11):
+	for index in range(1, 11):
 		assert f'NOFX_STORAGE_STATE_B64_{index}: ${{{{ secrets.NOFX_STORAGE_STATE_B64_{index} }}}}' in workflow
 	assert 'uv run python -u nofx_checkin.py' in workflow
 	assert workflow.count('NOFX_STORAGE_STATE_B64') >= 20
