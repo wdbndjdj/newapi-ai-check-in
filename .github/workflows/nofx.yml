@@ -16,7 +16,7 @@ concurrency:
 jobs:
   checkin:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: production
     env:
       NOFX_STORAGE_STATE_B64_1: ${{ secrets.NOFX_STORAGE_STATE_B64_1 }}
@@ -29,6 +29,16 @@ jobs:
       NOFX_STORAGE_STATE_B64_8: ${{ secrets.NOFX_STORAGE_STATE_B64_8 }}
       NOFX_STORAGE_STATE_B64_9: ${{ secrets.NOFX_STORAGE_STATE_B64_9 }}
       NOFX_STORAGE_STATE_B64_10: ${{ secrets.NOFX_STORAGE_STATE_B64_10 }}
+      NOFX_STORAGE_STATE_B64_11: ${{ secrets.NOFX_STORAGE_STATE_B64_11 }}
+      NOFX_STORAGE_STATE_B64_12: ${{ secrets.NOFX_STORAGE_STATE_B64_12 }}
+      NOFX_STORAGE_STATE_B64_13: ${{ secrets.NOFX_STORAGE_STATE_B64_13 }}
+      NOFX_STORAGE_STATE_B64_14: ${{ secrets.NOFX_STORAGE_STATE_B64_14 }}
+      NOFX_STORAGE_STATE_B64_15: ${{ secrets.NOFX_STORAGE_STATE_B64_15 }}
+      NOFX_STORAGE_STATE_B64_16: ${{ secrets.NOFX_STORAGE_STATE_B64_16 }}
+      NOFX_STORAGE_STATE_B64_17: ${{ secrets.NOFX_STORAGE_STATE_B64_17 }}
+      NOFX_STORAGE_STATE_B64_18: ${{ secrets.NOFX_STORAGE_STATE_B64_18 }}
+      NOFX_STORAGE_STATE_B64_19: ${{ secrets.NOFX_STORAGE_STATE_B64_19 }}
+      NOFX_STORAGE_STATE_B64_20: ${{ secrets.NOFX_STORAGE_STATE_B64_20 }}
       NOFX_BASE_URL: https://nofx.one
       NOFX_LOCALE: zh-CN
 
@@ -66,6 +76,16 @@ jobs:
             NOFX_STORAGE_STATE_B64_8
             NOFX_STORAGE_STATE_B64_9
             NOFX_STORAGE_STATE_B64_10
+            NOFX_STORAGE_STATE_B64_11
+            NOFX_STORAGE_STATE_B64_12
+            NOFX_STORAGE_STATE_B64_13
+            NOFX_STORAGE_STATE_B64_14
+            NOFX_STORAGE_STATE_B64_15
+            NOFX_STORAGE_STATE_B64_16
+            NOFX_STORAGE_STATE_B64_17
+            NOFX_STORAGE_STATE_B64_18
+            NOFX_STORAGE_STATE_B64_19
+            NOFX_STORAGE_STATE_B64_20
           )
           for secret_name in "${secret_names[@]}"; do
             secret_value="${!secret_name-}"
