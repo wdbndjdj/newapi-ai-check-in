@@ -24,7 +24,7 @@ LOCALE = os.getenv('NOFX_LOCALE', 'zh-CN')
 if not re.fullmatch(r'[a-z]{2}-[A-Z]{2}', LOCALE):
 	raise RuntimeError('NOFX_LOCALE 格式无效')
 TASKS_URL = f'{BASE_URL}/{LOCALE}/tasks'
-CHECKIN_TEXT = re.compile(r'(领取积分|每日签到|签到|claim|check.?in)', re.IGNORECASE)
+CHECKIN_TEXT = re.compile(r'(领取|每日签到|签到|claim|check.?in)', re.IGNORECASE)
 ALREADY_TEXT = re.compile(r'(已签到|checked.?in|already)', re.IGNORECASE)
 
 
@@ -102,16 +102,23 @@ async def check_in() -> None:
 			if '/sign-in' in page.url:
 				raise RuntimeError('NOFX 会话已失效，请重新完成 Magic Link 登录并更新 Secret')
 
-			daily_task = page.locator('article').filter(has_text='每日签到').first()
+			daily_task = page.locator('article').filter(has_text='每日签到').first
 			buttons = daily_task.get_by_role('button')
 			if await buttons.count() == 0:
+				all_buttons = await page.get_by_role('button').all_text_contents()
+				labels = '|'.join(' '.join(label.split())[:80] for label in all_buttons[:20])
+				print(f'NOFX_DEBUG_BUTTON_LABELS={labels}')
 				raise RuntimeError('未找到可识别的 NOFX 签到按钮，页面结构可能已变化')
-			candidate = buttons.first()
+			candidate = buttons.first
 			state_name = classify_checkin_button(await candidate.inner_text(), await candidate.is_disabled())
 			if state_name == 'already':
 				print('NOFX_CHECKIN_STATUS=already_or_unavailable')
 				return
 			if state_name != 'claim':
+				print(
+					f'NOFX_DEBUG_DAILY_BUTTON=text:{" ".join((await candidate.inner_text()).split())[:100]}'
+					f' disabled:{await candidate.is_disabled()}'
+				)
 				raise RuntimeError('未找到可领取状态的 NOFX 签到按钮，页面结构可能已变化')
 
 			await candidate.click(timeout=30_000)
@@ -120,10 +127,10 @@ async def check_in() -> None:
 			await page.wait_for_timeout(1_000)
 			if '/sign-in' in page.url:
 				raise RuntimeError('签到后会话跳回登录页，登录状态可能已失效')
-			daily_task = page.locator('article').filter(has_text='每日签到').first()
+			daily_task = page.locator('article').filter(has_text='每日签到').first
 			buttons = daily_task.get_by_role('button')
 			if await buttons.count() and classify_checkin_button(
-				await buttons.first().inner_text(), await buttons.first().is_disabled()
+				await buttons.first.inner_text(), await buttons.first.is_disabled()
 			) == 'already':
 				print('NOFX_CHECKIN_STATUS=credited_or_pending')
 				return
