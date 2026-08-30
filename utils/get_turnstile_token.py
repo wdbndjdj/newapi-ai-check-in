@@ -3,10 +3,45 @@
 
 from __future__ import annotations
 
+import json
+import os
+import urllib.request
+
 from camoufox.async_api import AsyncCamoufox
 from playwright_captcha import CaptchaType, ClickSolver, FrameworkType
 
 from utils.get_headers import get_browser_headers
+
+
+def _fetch_site_key(origin: str, proxy: dict | None) -> str:
+    """Resolve the public Turnstile key outside the browser context."""
+    handlers = []
+    if proxy and proxy.get("server"):
+        handlers.append(
+            urllib.request.ProxyHandler(
+                {"http": proxy["server"], "https": proxy["server"]}
+            )
+        )
+    try:
+        opener = urllib.request.build_opener(*handlers)
+        request = urllib.request.Request(
+            f"{origin.rstrip('/')}/api/status",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; newapi-check-in/1.0)",
+            },
+        )
+        with opener.open(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        if isinstance(data, dict):
+            for field in ("turnstile_site_key", "turnstile_sitekey", "turnstile_key"):
+                value = data.get(field)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    except Exception as exc:
+        print(f"TURNSTILE_SITEKEY_PREFETCH_FAILED={type(exc).__name__}")
+    return ""
 
 
 async def get_turnstile_token(
@@ -15,11 +50,12 @@ async def get_turnstile_token(
     proxy: dict | None = None,
 ) -> tuple[str, dict, dict] | None:
     print(f"ℹ️ {account_name}: Starting Turnstile verification")
+    sitekey = _fetch_site_key(origin, proxy)
     async with AsyncCamoufox(
         headless=False,
         humanize=True,
         locale="en-US",
-        os="macos",
+        os=os.environ.get("CAMOUFOX_OS", "macos"),
         proxy=proxy,
         geoip=bool(proxy),
         config={"forceScopeAccess": True},
@@ -63,13 +99,30 @@ async def get_turnstile_token(
 
                 token = await read_token()
                 if not token:
+                    # Explicit loading avoids CSP/WAF variants that block a
+                    # script tag created from page.evaluate.
+                    try:
+                        if not await page.evaluate("() => !!window.turnstile"):
+                            await page.add_script_tag(
+                                url="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+                            )
+                            await page.wait_for_timeout(1_000)
+                    except Exception:
+                        pass
                     rendered = await page.evaluate(
-                        """async () => {
-                            const response = await fetch('/api/status', { credentials: 'include' });
-                            const payload = await response.json();
-                            const data = payload.data || payload;
-                            const sitekey = data.turnstile_site_key ||
-                                data.turnstile_sitekey || data.turnstile_key;
+                        """async (prefetchedSitekey) => {
+                            let sitekey = prefetchedSitekey || '';
+                            if (!sitekey) {
+                                try {
+                                    const response = await fetch('/api/status', { credentials: 'include' });
+                                    const payload = await response.json();
+                                    const data = payload.data || payload;
+                                    sitekey = data.turnstile_site_key ||
+                                        data.turnstile_sitekey || data.turnstile_key || '';
+                                } catch (_) {
+                                    return false;
+                                }
+                            }
                             if (!sitekey) return false;
                             if (!window.turnstile) {
                                 await new Promise((resolve, reject) => {
@@ -114,7 +167,8 @@ async def get_turnstile_token(
                                 }
                             });
                             return true;
-                        }"""
+                        }""",
+                        sitekey,
                     )
                     print(
                         f"ℹ️ {account_name}: Turnstile widget "

@@ -45,9 +45,10 @@ def request_json(method: str, path: str, *, use_token: bool = False) -> dict:
         "New-Api-User": USER_ID,
         "User-Agent": "gorouter-checkin/1.0 (+github-actions)",
     }
-    if not COOKIE_HEADER:
-        fail("session cookie is required")
-    headers["Cookie"] = COOKIE_HEADER
+    if not COOKIE_HEADER and not TOKEN:
+        fail("session cookie or access token is required")
+    if COOKIE_HEADER:
+        headers["Cookie"] = COOKIE_HEADER
     if use_token and TOKEN:
         # new-api dashboard access tokens are sent verbatim (they are not
         # OAuth bearer tokens). This also keeps an expired browser session
@@ -113,6 +114,26 @@ async def solve_turnstile_token() -> str:
         fail("Turnstile browser dependencies are unavailable")
 
     print(f"ACCOUNT={ACCOUNT_NAME} TURNSTILE=START")
+    sitekey = ""
+    try:
+        request = urllib.request.Request(
+            f"{BASE_URL}/api/status",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; newapi-check-in/1.0)",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        if isinstance(data, dict):
+            for field in ("turnstile_site_key", "turnstile_sitekey", "turnstile_key"):
+                value = data.get(field)
+                if isinstance(value, str) and value.strip():
+                    sitekey = value.strip()
+                    break
+    except Exception as exc:
+        print(f"ACCOUNT={ACCOUNT_NAME} TURNSTILE_SITEKEY_PREFETCH_FAILED={type(exc).__name__}")
     async with AsyncCamoufox(
         headless=False,
         humanize=True,
@@ -149,17 +170,21 @@ async def solve_turnstile_token() -> str:
 
             token = await read_token()
             if not token:
+                try:
+                    if not await page.evaluate("() => !!window.turnstile"):
+                        await page.add_script_tag(
+                            url="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+                        )
+                        await page.wait_for_timeout(1_000)
+                except Exception:
+                    pass
                 # GoRouter's built-in widget uses interaction-only appearance,
                 # so its iframe can remain 0x0 until a form action. Render a
                 # normal visible widget with the same public site key.
                 rendered = await page.evaluate(
                     """
-                    async () => {
-                      const response = await fetch('/api/status');
-                      const payload = await response.json();
-                      const data = payload.data || payload;
-                      const sitekey = data.turnstile_site_key ||
-                        data.turnstile_sitekey || data.turnstile_key;
+                    async (prefetchedSitekey) => {
+                      const sitekey = prefetchedSitekey || '';
                       if (!sitekey || !window.turnstile) return false;
                       document.querySelector('#gorouter-checkin-turnstile')?.remove();
                       const host = document.createElement('div');
@@ -176,7 +201,8 @@ async def solve_turnstile_token() -> str:
                       });
                       return true;
                     }
-                    """
+                    """,
+                    sitekey,
                 )
                 print(
                     f"ACCOUNT={ACCOUNT_NAME} TURNSTILE_RENDER="
