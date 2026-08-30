@@ -20,6 +20,8 @@ jobs:
     env:
       PYTHONIOENCODING: utf-8
       CAMOUFOX_OS: windows
+      # Public site key used to render the provider's Turnstile widget.
+      TURNSTILE_SITE_KEY: 0x4AAAAAAEQ0v37GMr9cC_Kw
       GITHUB_TOKEN: ${{ github.token }}
       JUSTWOKER_ACCESS_TOKEN: ${{ secrets.JUSTWOKER_ACCESS_TOKEN }}
       JUSTWOKER_ACCESS_TOKEN_2: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_2 }}

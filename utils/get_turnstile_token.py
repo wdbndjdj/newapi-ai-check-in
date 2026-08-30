@@ -50,7 +50,7 @@ async def get_turnstile_token(
     proxy: dict | None = None,
 ) -> tuple[str, dict, dict] | None:
     print(f"ℹ️ {account_name}: Starting Turnstile verification")
-    sitekey = _fetch_site_key(origin, proxy)
+    sitekey = os.environ.get("TURNSTILE_SITE_KEY", "").strip() or _fetch_site_key(origin, proxy)
     async with AsyncCamoufox(
         headless=False,
         humanize=True,
