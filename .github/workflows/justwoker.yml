@@ -29,8 +29,9 @@ jobs:
       JUSTWOKER_ACCESS_TOKEN_4: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_4 }}
       JUSTWOKER_ACCESS_TOKEN_5: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_5 }}
       JUSTWOKER_ACCESS_TOKEN_6: ${{ secrets.JUSTWOKER_ACCESS_TOKEN_6 }}
+      JUSTWOKER_ACCESS_TOKENS_7_12: ${{ secrets.JUSTWOKER_ACCESS_TOKENS_7_12 }}
       JUSTWOKER_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}
-      REQUIRED_ACCOUNT_SUCCESSES: "6"
+      REQUIRED_ACCOUNT_SUCCESSES: "12"
       DEBUG: ${{ inputs.debug || vars.DEBUG || 'false' }}
       DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -100,23 +101,50 @@ jobs:
             "JUSTWOKER_ACCESS_TOKEN_6"
           )
           $requiredCount = [int]$env:REQUIRED_ACCOUNT_SUCCESSES
-          if ($requiredCount -ne $secretNames.Count) {
+          if (-not $env:JUSTWOKER_ACCESS_TOKENS_7_12) {
+            throw "JustWoker 新增账号 Secret 未配置"
+          }
+          try {
+            $additionalTokens = @(
+              ConvertFrom-Json -InputObject $env:JUSTWOKER_ACCESS_TOKENS_7_12
+            )
+          } catch {
+            throw "JustWoker 新增账号 Secret 不是有效 JSON 数组"
+          }
+          if ($additionalTokens.Count -ne 6) {
+            throw "JustWoker 新增账号 Secret 必须包含 6 个令牌"
+          }
+          $tokenEntries = @()
+          foreach ($secretName in $secretNames) {
+            $tokenEntries += [ordered]@{
+              source = $secretName
+              raw = [System.Environment]::GetEnvironmentVariable($secretName)
+            }
+          }
+          for ($additionalIndex = 0; $additionalIndex -lt $additionalTokens.Count; $additionalIndex++) {
+            $tokenEntries += [ordered]@{
+              source = "JUSTWOKER_ACCESS_TOKENS_7_12[$additionalIndex]"
+              raw = [string]$additionalTokens[$additionalIndex]
+            }
+          }
+          if ($requiredCount -ne $tokenEntries.Count) {
             throw "JustWoker 账号目标数量与 Secret 槽位数量不一致"
           }
           $accountObjects = @()
           $uniqueTokens = [System.Collections.Generic.HashSet[string]]::new(
             [System.StringComparer]::Ordinal
           )
-          for ($index = 0; $index -lt $secretNames.Count; $index++) {
-            $rawToken = [System.Environment]::GetEnvironmentVariable($secretNames[$index])
+          for ($index = 0; $index -lt $tokenEntries.Count; $index++) {
+            $rawToken = $tokenEntries[$index].raw
+            $source = $tokenEntries[$index].source
             if ([string]::IsNullOrWhiteSpace($rawToken)) { continue }
             $token = $rawToken.Trim()
             if ($token -ne $rawToken) {
-              throw "JustWoker 账号 Secret 含首尾空格：$($secretNames[$index])"
+              throw "JustWoker 账号 Secret 含首尾空格：$source"
             }
             Write-Output "::add-mask::$token"
             if (-not $uniqueTokens.Add($token)) {
-              throw "JustWoker 账号 Secret 重复：$($secretNames[$index])"
+              throw "JustWoker 账号 Secret 重复：$source"
             }
             $accountObjects += [ordered]@{
               name = "JustWoker $($index + 1)"
@@ -195,7 +223,7 @@ jobs:
             uv run python -u main.py
             $checkinExit = $LASTEXITCODE
             if ($checkinExit -ne 0) { throw "JustWoker 签到失败" }
-            Write-Output "JUSTWOKER_SUCCESS_COUNT=6/6"
+            Write-Output "JUSTWOKER_SUCCESS_COUNT=12/12"
           } finally {
             if ($mihomo -and -not $mihomo.HasExited) {
               Stop-Process -Id $mihomo.Id

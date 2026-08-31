@@ -72,10 +72,10 @@ def test_justwoker_checkin_retries_transient_network_error(monkeypatch):
 	sleep.assert_awaited_once_with(5)
 
 
-def test_justwoker_workflow_uses_six_tokens_and_reuses_vmess_proxy():
+def test_justwoker_workflow_uses_twelve_tokens_and_reuses_vmess_proxy():
 	workflow = (Path(__file__).parent.parent / '.github' / 'workflows' / 'justwoker.yml').read_text(encoding='utf-8')
 
-	assert workflow.count('${{ secrets.JUSTWOKER_ACCESS_TOKEN') == 6
+	assert workflow.count('${{ secrets.JUSTWOKER_ACCESS_TOKEN') == 7
 	assert 'JUSTWOKER_ACCESS_TOKEN: ${{ secrets.JUSTWOKER_ACCESS_TOKEN }}' in workflow
 	for index in range(2, 7):
 		assert (
@@ -84,6 +84,13 @@ def test_justwoker_workflow_uses_six_tokens_and_reuses_vmess_proxy():
 		) in workflow
 		assert workflow.count(f'"JUSTWOKER_ACCESS_TOKEN_{index}"') == 1
 	assert 'JUSTWOKER_ACCESS_TOKEN_7:' not in workflow
+	assert (
+		'JUSTWOKER_ACCESS_TOKENS_7_12: '
+		'${{ secrets.JUSTWOKER_ACCESS_TOKENS_7_12 }}'
+	) in workflow
+	assert 'ConvertFrom-Json -InputObject $env:JUSTWOKER_ACCESS_TOKENS_7_12' in workflow
+	assert '$additionalTokens.Count -ne 6' in workflow
+	assert '$tokenEntries.Count' in workflow
 	assert 'GITHUB_TOKEN: ${{ github.token }}' in workflow
 	assert 'JUSTWOKER_CLASH_CONFIG: ${{ secrets.TABITOKEN_CLASH_CONFIG }}' in workflow
 	assert 'provider = "justwoker"' in workflow
@@ -96,7 +103,7 @@ def test_justwoker_workflow_uses_six_tokens_and_reuses_vmess_proxy():
 	assert '$accountObjects.Count -ne $requiredCount' in workflow
 	assert '[string]::IsNullOrWhiteSpace($rawToken)' in workflow
 	assert '$token = $rawToken.Trim()' in workflow
-	assert 'REQUIRED_ACCOUNT_SUCCESSES: "6"' in workflow
+	assert 'REQUIRED_ACCOUNT_SUCCESSES: "12"' in workflow
 	assert 'mihomoVersion = "v1.19.30"' in workflow
 	assert 'mihomoSha256 = "289fde5e29d37a5b3326480590d8b3551c5bf7f8737290355c19bce74d57a563"' in workflow
 	assert '& $mihomoExe -t -f $configPath' in workflow
@@ -104,5 +111,5 @@ def test_justwoker_workflow_uses_six_tokens_and_reuses_vmess_proxy():
 	assert 'VMESS_EGRESS_CHANGED=True' in workflow
 	assert '$env:PROXY = \'{"server":"http://127.0.0.1:7890"}\'' in workflow
 	assert workflow.count('uv run python -u main.py') == 1
-	assert 'JUSTWOKER_SUCCESS_COUNT=6/6' in workflow
+	assert 'JUSTWOKER_SUCCESS_COUNT=12/12' in workflow
 	assert 'qualification-isbn-improvements-governments.trycloudflare.com' not in workflow

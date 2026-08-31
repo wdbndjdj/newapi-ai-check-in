@@ -342,10 +342,11 @@ Mihomo 下载文件和代理配置，再确认代理出口与直连出口不同�
 Environment Secret `JUSTWOKER_ACCESS_TOKEN`；令牌只在 Actions 内存与掩码环境中使用，
 不会写入仓库文件。
 
-六账号模式依次使用 `JUSTWOKER_ACCESS_TOKEN`、`JUSTWOKER_ACCESS_TOKEN_2` 至
-`JUSTWOKER_ACCESS_TOKEN_6` 六个 production Environment Secrets。workflow 会拒绝缺失、空白、
+十二账号模式保留 `JUSTWOKER_ACCESS_TOKEN`、`JUSTWOKER_ACCESS_TOKEN_2` 至
+`JUSTWOKER_ACCESS_TOKEN_6` 六个独立 production Environment Secrets，并将新增六个令牌以 JSON 数组保存到
+`JUSTWOKER_ACCESS_TOKENS_7_12`。workflow 会拒绝缺失、数量错误、空白、
 含首尾空格或重复的令牌，
-只有程序确认六个账号全部成功时任务才成功；六个账号顺序复用同一个已验证的 VMess 出口。
+只有程序确认十二个账号全部成功时任务才成功；十二个账号顺序复用同一个已验证的 VMess 出口。
 
 JustWoker workflow 复用 `TABITOKEN_CLASH_CONFIG` 中的 VMess 节点。流程会校验固定版本
 Mihomo 的 SHA-256、代理配置和出口变化，再通过本地 `http://127.0.0.1:7890` 查询当日状态并
