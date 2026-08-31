@@ -41,6 +41,12 @@ def classify_checkin_button(text: str, disabled: bool) -> str | None:
 	return 'claim'
 
 
+def is_discord_only_task(text: str) -> bool:
+	"""Return whether NOFX has replaced web claiming with Discord check-in."""
+
+	return bool(re.search(r'Discord|/checkin|网页签到已关闭|签到已关闭', text, re.IGNORECASE))
+
+
 def load_storage_state() -> dict[str, Any]:
 	"""Load storage state from a file, raw JSON, or base64 environment secret."""
 
@@ -103,8 +109,16 @@ async def check_in() -> None:
 				raise RuntimeError('NOFX 会话已失效，请重新完成 Magic Link 登录并更新 Secret')
 
 			daily_task = page.locator('article').filter(has_text='每日签到').first
+			task_text = ' '.join((await daily_task.inner_text()).split())
 			buttons = daily_task.get_by_role('button')
 			if await buttons.count() == 0:
+				# NOFX has moved daily check-in to its Discord bot. The task card
+				# remains visible and links to Discord instead of exposing a web
+				# claim button; treat that as a known unavailable web action.
+				if is_discord_only_task(task_text):
+					print('NOFX_CHECKIN_STATUS=already_or_unavailable')
+					print('NOFX_CHECKIN_NOTE=web_checkin_closed_use_discord')
+					return
 				all_buttons = await page.get_by_role('button').all_text_contents()
 				labels = '|'.join(' '.join(label.split())[:80] for label in all_buttons[:20])
 				print(f'NOFX_DEBUG_BUTTON_LABELS={labels}')

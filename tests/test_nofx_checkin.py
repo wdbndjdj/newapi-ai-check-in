@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from nofx_checkin import classify_checkin_button, load_storage_state
+from nofx_checkin import classify_checkin_button, is_discord_only_task, load_storage_state
 
 
 def test_classify_checkin_button_states():
@@ -15,6 +15,11 @@ def test_classify_checkin_button_states():
 	assert classify_checkin_button('已签到', True) == 'already'
 	assert classify_checkin_button('Check-in', False) == 'claim'
 	assert classify_checkin_button('设置', False) is None
+
+
+def test_discord_only_daily_task_detection():
+	assert is_discord_only_task('在 Discord 输入 /checkin，每天可领取积分')
+	assert not is_discord_only_task('领取 $5 积分')
 
 
 def test_load_storage_state_from_base64(monkeypatch):
