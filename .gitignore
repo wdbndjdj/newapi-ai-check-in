@@ -6,6 +6,8 @@ __pycache__
 screenshots
 storage-states
 nofx-state*.json
+nofx-debug.png
+slot*.png
 logs
 balance_hash.txt
 balance_hash_*.txt
