@@ -124,20 +124,10 @@ async def ensure_login(page: Page, account: Account) -> None:
 	await page.wait_for_timeout(1_500)
 	if '/channels/' in page.url:
 		return
-	await page.evaluate(
-		"""token => {
-			const frame = document.createElement('iframe');
-			document.body.appendChild(frame);
-			frame.contentWindow.localStorage.setItem('token', JSON.stringify(token));
-			frame.remove();
-		}""",
-		account.token,
+	raise RuntimeError(
+		f'Discord profile {account.slot:02d} is not logged in; '
+		f'run open-profile --slot {account.slot} and sign in manually'
 	)
-	await page.reload(wait_until='domcontentloaded', timeout=90_000)
-	try:
-		await page.wait_for_url('**/channels/**', timeout=45_000)
-	except Exception as exc:
-		raise RuntimeError('Discord profile login did not complete') from exc
 
 
 async def get_page(context: BrowserContext) -> Page:
@@ -148,11 +138,15 @@ async def open_profile(slot: int) -> None:
 	account = account_for_slot(slot)
 	async with discord_profile(account, headed=True) as context:
 		page = await get_page(context)
-		await ensure_login(page, account)
-		member = doctor_account(account)['nofx_member']
-		await page.goto(CHANNEL_URL if member else INVITE_URL, wait_until='domcontentloaded', timeout=90_000)
+		await page.goto('https://discord.com/login', wait_until='domcontentloaded', timeout=90_000)
+		await page.wait_for_timeout(1_500)
+		if '/channels/' in page.url:
+			member = doctor_account(account)['nofx_member']
+			await page.goto(CHANNEL_URL if member else INVITE_URL, wait_until='domcontentloaded', timeout=90_000)
+		else:
+			member = False
 		print(f'SLOT={slot:02d} PROFILE_READY=true NOFX_MEMBER={str(member).lower()}')
-		print('Complete any visible Discord confirmation, then return here and press Enter.')
+		print('Sign in manually, complete any visible Discord confirmation, then return here and press Enter.')
 		await asyncio.to_thread(input)
 
 
