@@ -44,6 +44,42 @@ def _fetch_site_key(origin: str, proxy: dict | None) -> str:
     return ""
 
 
+async def _solve_captcha_with_fresh_checkbox(
+    solver,
+    page,
+    captcha_type: CaptchaType,
+    *,
+    attempts: int = 3,
+) -> bool:
+    """Re-discover the checkbox after a Turnstile iframe is replaced.
+
+    ``playwright-captcha`` keeps the first checkbox handle while it retries.
+    Turnstile can replace that iframe after a click, which makes the handle
+    stale and produces ``Frame was detached``.  One click per solver call
+    makes each retry perform fresh iframe/checkbox discovery instead of
+    clicking the same detached handle repeatedly.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            await solver.solve_captcha(
+                captcha_container=page,
+                captcha_type=captcha_type,
+                checkbox_click_attempts=1,
+                wait_checkbox_attempts=4,
+                wait_checkbox_delay=1,
+            )
+            return True
+        except Exception as exc:
+            if attempt == attempts:
+                print(
+                    f"Turnstile click retry exhausted "
+                    f"after {attempts} attempts: {type(exc).__name__}"
+                )
+                return False
+            await page.wait_for_timeout(1_000)
+    return False
+
+
 async def get_turnstile_token(
     origin: str,
     account_name: str,
@@ -64,8 +100,10 @@ async def get_turnstile_token(
         async with ClickSolver(
             framework=FrameworkType.CAMOUFOX,
             page=page,
-            max_attempts=2,
-            attempt_delay=3,
+            # Retry the whole discovery/click operation ourselves so every
+            # attempt obtains a fresh iframe and checkbox handle.
+            max_attempts=1,
+            attempt_delay=1,
         ) as solver:
             try:
                 await page.goto(f"{origin}/sign-in", wait_until="domcontentloaded", timeout=60_000)
@@ -74,9 +112,10 @@ async def get_turnstile_token(
                 title = await page.title()
                 content = await page.content()
                 if "Just a moment" in title or "Checking your browser" in content:
-                    await solver.solve_captcha(
-                        captcha_container=page,
-                        captcha_type=CaptchaType.CLOUDFLARE_INTERSTITIAL,
+                    await _solve_captcha_with_fresh_checkbox(
+                        solver,
+                        page,
+                        CaptchaType.CLOUDFLARE_INTERSTITIAL,
                     )
                     await page.wait_for_timeout(5_000)
 
@@ -178,12 +217,12 @@ async def get_turnstile_token(
                     token = await read_token()
 
                 if not token:
-                    try:
-                        await solver.solve_captcha(
-                            captcha_container=page,
-                            captcha_type=CaptchaType.CLOUDFLARE_TURNSTILE,
-                        )
-                    except Exception:
+                    solved = await _solve_captcha_with_fresh_checkbox(
+                        solver,
+                        page,
+                        CaptchaType.CLOUDFLARE_TURNSTILE,
+                    )
+                    if not solved:
                         clicked = False
                         host = await page.query_selector("#newapi-checkin-turnstile")
                         host_box = await host.bounding_box() if host else None

@@ -4,10 +4,13 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from playwright_captcha import CaptchaType
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from checkin import CheckIn
 from utils.config import AccountConfig, AppConfig
+from utils.get_turnstile_token import _solve_captcha_with_fresh_checkbox
 
 
 def _providers(monkeypatch):
@@ -70,6 +73,76 @@ def test_justwoker_checkin_retries_transient_network_error(monkeypatch):
 	assert result['success'] is True
 	assert session.post.call_count == 2
 	sleep.assert_awaited_once_with(5)
+
+
+def test_turnstile_click_reacquires_checkbox_after_detached_frame():
+	class FakePage:
+		def __init__(self):
+			self.waits = []
+
+		async def wait_for_timeout(self, delay):
+			self.waits.append(delay)
+
+	class FakeSolver:
+		def __init__(self):
+			self.calls = []
+
+		async def solve_captcha(self, **kwargs):
+			self.calls.append(kwargs)
+			if len(self.calls) == 1:
+				raise RuntimeError('Frame was detached')
+
+	page = FakePage()
+	solver = FakeSolver()
+
+	result = asyncio.run(
+		_solve_captcha_with_fresh_checkbox(
+			solver,
+			page,
+			CaptchaType.CLOUDFLARE_TURNSTILE,
+		)
+	)
+
+	assert result is True
+	assert len(solver.calls) == 2
+	assert page.waits == [1000]
+	for call in solver.calls:
+		assert call['checkbox_click_attempts'] == 1
+		assert call['wait_checkbox_attempts'] == 4
+		assert call['wait_checkbox_delay'] == 1
+
+
+def test_turnstile_click_reacquire_exhaustion_is_reported_without_token():
+	class FakePage:
+		def __init__(self):
+			self.waits = []
+
+		async def wait_for_timeout(self, delay):
+			self.waits.append(delay)
+
+	class FakeSolver:
+		def __init__(self):
+			self.calls = 0
+
+		async def solve_captcha(self, **kwargs):
+			self.calls += 1
+			raise RuntimeError('Failed to click checkbox after maximum attempts')
+
+	page = FakePage()
+	solver = FakeSolver()
+
+	result = asyncio.run(
+		_solve_captcha_with_fresh_checkbox(
+			solver,
+			page,
+			CaptchaType.CLOUDFLARE_TURNSTILE,
+			attempts=3,
+		)
+	)
+
+	assert result is False
+	assert solver.calls == 3
+	assert page.waits == [1000, 1000]
 
 
 def test_justwoker_workflow_uses_twelve_tokens_and_reuses_vmess_proxy():
