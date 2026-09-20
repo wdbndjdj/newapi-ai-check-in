@@ -44,6 +44,25 @@ def _fetch_site_key(origin: str, proxy: dict | None) -> str:
     return ""
 
 
+async def _hide_known_captcha_overlays(page) -> None:
+    """Remove the provider's Discord portal before clicking Turnstile.
+
+    JustWoker renders a Discord image inside a Base UI portal.  That portal
+    can sit above the Turnstile iframe and intercept every click, even though
+    the checkbox is visible.  It is unrelated to authentication, so remove
+    only that known overlay before each solver attempt.
+    """
+    await page.evaluate(
+        """() => {
+            for (const image of document.querySelectorAll('img[alt="discord"]')) {
+                const portal = image.closest('[data-base-ui-portal]') ||
+                    image.closest('[role="dialog"]');
+                (portal || image).remove();
+            }
+        }"""
+    )
+
+
 async def _solve_captcha_with_fresh_checkbox(
     solver,
     page,
@@ -61,6 +80,7 @@ async def _solve_captcha_with_fresh_checkbox(
     """
     for attempt in range(1, attempts + 1):
         try:
+            await _hide_known_captcha_overlays(page)
             await solver.solve_captcha(
                 captcha_container=page,
                 captcha_type=captcha_type,

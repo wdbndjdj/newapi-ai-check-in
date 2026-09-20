@@ -10,7 +10,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from checkin import CheckIn
 from utils.config import AccountConfig, AppConfig
-from utils.get_turnstile_token import _solve_captcha_with_fresh_checkbox
+from utils.get_turnstile_token import (
+	_hide_known_captcha_overlays,
+	_solve_captcha_with_fresh_checkbox,
+)
 
 
 def _providers(monkeypatch):
@@ -83,6 +86,9 @@ def test_turnstile_click_reacquires_checkbox_after_detached_frame():
 		async def wait_for_timeout(self, delay):
 			self.waits.append(delay)
 
+		async def evaluate(self, script):
+			return None
+
 	class FakeSolver:
 		def __init__(self):
 			self.calls = []
@@ -112,6 +118,22 @@ def test_turnstile_click_reacquires_checkbox_after_detached_frame():
 		assert call['wait_checkbox_delay'] == 1
 
 
+def test_turnstile_removes_known_discord_overlay_before_clicking():
+	class FakePage:
+		def __init__(self):
+			self.scripts = []
+
+		async def evaluate(self, script):
+			self.scripts.append(script)
+
+	page = FakePage()
+	asyncio.run(_hide_known_captcha_overlays(page))
+
+	assert len(page.scripts) == 1
+	assert 'img[alt="discord"]' in page.scripts[0]
+	assert 'data-base-ui-portal' in page.scripts[0]
+
+
 def test_turnstile_click_reacquire_exhaustion_is_reported_without_token():
 	class FakePage:
 		def __init__(self):
@@ -119,6 +141,9 @@ def test_turnstile_click_reacquire_exhaustion_is_reported_without_token():
 
 		async def wait_for_timeout(self, delay):
 			self.waits.append(delay)
+
+		async def evaluate(self, script):
+			return None
 
 	class FakeSolver:
 		def __init__(self):
