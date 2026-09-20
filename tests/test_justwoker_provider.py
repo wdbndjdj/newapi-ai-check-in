@@ -145,6 +145,16 @@ def test_turnstile_click_reacquire_exhaustion_is_reported_without_token():
 	assert page.waits == [1000, 1000]
 
 
+def test_turnstile_source_stops_after_interstitial_retry_exhaustion():
+	source = (Path(__file__).parent.parent / 'utils' / 'get_turnstile_token.py').read_text(
+		encoding='utf-8'
+	)
+
+	assert 'solved = await _solve_captcha_with_fresh_checkbox(' in source
+	assert 'if not solved:' in source
+	assert 'Cloudflare interstitial challenge was not solved' in source
+
+
 def test_justwoker_workflow_uses_twelve_tokens_and_reuses_vmess_proxy():
 	workflow = (Path(__file__).parent.parent / '.github' / 'workflows' / 'justwoker.yml').read_text(encoding='utf-8')
 

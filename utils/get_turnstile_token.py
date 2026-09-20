@@ -112,11 +112,14 @@ async def get_turnstile_token(
                 title = await page.title()
                 content = await page.content()
                 if "Just a moment" in title or "Checking your browser" in content:
-                    await _solve_captcha_with_fresh_checkbox(
+                    solved = await _solve_captcha_with_fresh_checkbox(
                         solver,
                         page,
                         CaptchaType.CLOUDFLARE_INTERSTITIAL,
                     )
+                    if not solved:
+                        print(f"❌ {account_name}: Cloudflare interstitial challenge was not solved")
+                        return None
                     await page.wait_for_timeout(5_000)
 
                 async def read_token() -> str:
