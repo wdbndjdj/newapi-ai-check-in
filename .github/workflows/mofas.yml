@@ -1,0 +1,31 @@
+name: 魔方公益站自动签到
+
+on:
+  schedule:
+    - cron: '7 2 * * *' # 北京时间每天 10:07
+  workflow_dispatch: {}
+
+concurrency:
+  group: mofas-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 验证签到逻辑
+        run: python tests/test_mofas_api.py
+      - name: 签到并确认今日状态
+        env:
+          MOFAS_USER_ID: "11932"
+          MOFAS_ACCESS_TOKEN: ${{ secrets.MOFAS_ACCESS_TOKEN }}
+        run: python -u mofas_checkin.py
