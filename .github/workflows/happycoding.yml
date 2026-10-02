@@ -1,0 +1,30 @@
+name: HappyCoding 自动签到
+
+on:
+  schedule:
+    - cron: '57 1 * * *' # 北京时间每天 09:57
+  workflow_dispatch: {}
+
+concurrency:
+  group: happycoding-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 验证签到逻辑
+        run: python tests/test_happycoding_api.py
+      - name: 签到并确认今日状态
+        env:
+          HAPPYCODING_ACCESS_TOKEN: ${{ secrets.HAPPYCODING_ACCESS_TOKEN }}
+        run: python -u happycoding_checkin.py
