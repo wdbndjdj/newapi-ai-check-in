@@ -1,0 +1,35 @@
+name: HappyCoding and Mofas check-in watchdog
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: checkin-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Offline watchdog tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B tests/test_checkin_watchdog.py -v
+      - name: Check receipts and conservatively recover missed check-ins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        # workflow_dispatch is the GITHUB_TOKEN recursion-prevention exception.
+        # Site tokens remain exclusively in the two existing child workflows.
+        run: python -B scripts/checkin_watchdog.py --wait-seconds 240
