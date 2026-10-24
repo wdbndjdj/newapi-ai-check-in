@@ -114,27 +114,45 @@ class HyxwareLogicTest(OfflineTest):
                 app.checkin(TOKEN)
         self.assertEqual(api.call_count, 4)
 
-    def test_uncertain_post_and_http_conflict_are_read_only_reconciled(self):
-        for code in ('network', 'conflict'):
+    def test_uncertain_post_schema_and_http_conflict_are_read_only_reconciled(self):
+        for code in ('network', 'conflict', 'schema'):
             with self.subTest(code=code):
                 result, calls = self.invoke([IDENTITY, status(), app.CheckinError(code), checked()])
                 self.assertEqual(result['result'], 'checked_in')
                 self.assertEqual(sum(c.kwargs.get('method') == 'POST' for c in calls), 1)
 
-    def test_post_auth_challenge_redirect_or_schema_failure_stops(self):
-        for code in ('auth', 'challenge', 'redirect', 'schema'):
+    def test_post_auth_challenge_redirect_or_http_failure_stops(self):
+        for code in ('auth', 'challenge', 'redirect', 'http'):
             with self.subTest(code=code), patch.object(app, 'request_json', side_effect=[
                     IDENTITY, status(), app.CheckinError(code)]) as api:
                 with self.assertRaises(app.CheckinError):
                     app.checkin(TOKEN)
                 self.assertEqual(api.call_count, 3)
 
-    def test_malformed_post_envelope_fails(self):
+    def test_malformed_post_envelope_is_read_only_reconciled(self):
         for response in ({}, {'success': 1}, None, []):
+            for final, verifies in ((checked(), True), (status(), False)):
+                with self.subTest(response=response, verifies=verifies), \
+                        patch.object(app, 'request_json', side_effect=[
+                            IDENTITY, status(), response, final]) as api:
+                    if verifies:
+                        self.assertEqual(app.checkin(TOKEN)['result'], 'checked_in')
+                    else:
+                        with self.assertRaises(app.CheckinError) as raised:
+                            app.checkin(TOKEN)
+                        self.assertEqual(raised.exception.code, 'verification')
+                    self.assertEqual([c.kwargs.get('method', 'GET') for c in api.call_args_list],
+                                     ['GET', 'GET', 'POST', 'GET'])
+
+    def test_malformed_post_challenge_envelope_stops_before_verification(self):
+        for response in ({'message': 'CAPTCHA required'},
+                         {'success': 1, 'requires_captcha': True},
+                         {'success': None, 'challenge': True}):
             with self.subTest(response=response), patch.object(app, 'request_json', side_effect=[
                     IDENTITY, status(), response]) as api:
-                with self.assertRaises(app.CheckinError):
+                with self.assertRaises(app.CheckinError) as raised:
                     app.checkin(TOKEN)
+                self.assertEqual(raised.exception.code, 'challenge')
                 self.assertEqual(api.call_count, 3)
 
     def test_invalid_identity_stops_before_status_or_post(self):
@@ -215,7 +233,7 @@ class HyxwareLogicTest(OfflineTest):
 
 
     def test_network_or_conflict_without_exact_record_never_reposts(self):
-        for code in ('network', 'conflict'):
+        for code in ('network', 'conflict', 'schema'):
             with self.subTest(code=code), patch.object(app, 'request_json', side_effect=[
                     IDENTITY, status(), app.CheckinError(code), status()]) as api:
                 with self.assertRaises(app.CheckinError) as raised:
@@ -540,6 +558,44 @@ class HyxwareMainTest(OfflineTest):
                     self.assertNotIn('Traceback', rendered)
                 self.assertEqual(factory.return_value.open.call_count, 1)
 
+
+    def run_truncated_post_response(self, final_status):
+        class SocketFixture:
+            def makefile(self, *args, **kwargs):
+                return io.BytesIO(
+                    b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
+                    b'Content-Length: 200\r\n\r\n{"success":tr')
+
+        # Real HTTPResponse.read(size) returns short JSON without IncompleteRead.
+        truncated = http.client.HTTPResponse(SocketFixture())
+        truncated.begin()
+        truncated.url = app.ORIGIN + '/api/user/checkin'
+        with patch.dict(app.os.environ, {'HYXWARE_ACCESS_TOKEN': TOKEN}, clear=True), \
+                patch.object(app.urllib.request, 'build_opener') as factory, \
+                redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+            factory.return_value.open.side_effect = [
+                Response(IDENTITY), Response(status(), url=app.ORIGIN + STATUS_PATH),
+                truncated, Response(final_status, url=app.ORIGIN + STATUS_PATH)]
+            code = app.main()
+        methods = [c.args[0].get_method() for c in factory.return_value.open.call_args_list]
+        return code, out.getvalue(), err.getvalue(), methods
+
+    def test_truncated_json_post_is_verified_once_without_reposting(self):
+        code, out, err, methods = self.run_truncated_post_response(checked())
+        self.assertEqual(code, 0)
+        self.assertEqual(methods, ['GET', 'GET', 'POST', 'GET'])
+        receipt = json.loads(out)
+        self.assertEqual(receipt['result'], 'checked_in')
+        self.assertEqual(receipt['record_date'], DAY)
+        self.assertEqual(receipt['quota_awarded'], 2500000)
+        self.assertEqual(err, '')
+
+    def test_truncated_json_post_without_record_fails_without_reposting(self):
+        code, out, err, methods = self.run_truncated_post_response(status())
+        self.assertEqual(code, 1)
+        self.assertEqual(out, '')
+        self.assertEqual(err, app.ERROR_MESSAGES['verification'] + '\n')
+        self.assertEqual(methods, ['GET', 'GET', 'POST', 'GET'])
 
     def test_incomplete_post_response_is_requeried_once_without_reposting(self):
         class BrokenResponse(Response):

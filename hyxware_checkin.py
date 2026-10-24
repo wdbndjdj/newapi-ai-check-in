@@ -72,7 +72,7 @@ def validated_endpoint(path, method):
 
 
 def validated_envelope(result):
-    if not isinstance(result, dict) or type(result.get('success')) is not bool:
+    if not isinstance(result, dict):
         raise CheckinError('schema')
     # Treat explicit anti-bot indicators as failures, never as duplicate results.
     message = result.get('message')
@@ -81,6 +81,8 @@ def validated_envelope(result):
         raise CheckinError('challenge')
     if any(result.get(key) for key in ('captcha', 'turnstile', 'challenge', 'requires_captcha')):
         raise CheckinError('challenge')
+    if type(result.get('success')) is not bool:
+        raise CheckinError('schema')
     return result
 
 
@@ -194,9 +196,9 @@ def checkin(token):
         try:
             validated_envelope(request_json('/api/user/checkin', token, method='POST', user_id=user_id))
         except CheckinError as error:
-            # A lost/truncated POST response or concurrent 409 is ambiguous, not a reason
-            # to repost. Other failures (especially auth/challenges) stop here.
-            if error.code not in ('network', 'conflict'):
+            # Lost/truncated or malformed POST replies and concurrent 409s are
+            # ambiguous: verify once by GET, never repost. Auth/challenges stop.
+            if error.code not in ('network', 'conflict', 'schema'):
                 raise
         require_same_day(day)
         record = today_record(request_json(path, token, user_id=user_id), day)
