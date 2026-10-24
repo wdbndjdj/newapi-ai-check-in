@@ -1,0 +1,40 @@
+name: Hyxware daily check-in
+
+on:
+  schedule:
+    - cron: '17 2 * * *' # Beijing time daily 10:17
+  workflow_dispatch: {}
+
+concurrency:
+  group: hyxware-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    name: Hyxware ${{ matrix.account }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: account1
+            secret: HYXWARE_ACCESS_TOKEN_1
+          - account: account2
+            secret: HYXWARE_ACCESS_TOKEN_2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Test isolated Hyxware check-in offline
+        run: python -B tests/test_hyxware_api.py
+      - name: Check in and verify today's exact-date record
+        env:
+          HYXWARE_ACCESS_TOKEN: ${{ secrets[matrix.secret] }}
+        run: python -u -B hyxware_checkin.py
