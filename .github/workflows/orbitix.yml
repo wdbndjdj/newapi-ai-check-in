@@ -1,0 +1,29 @@
+name: Orbitix daily check-in
+
+on:
+  schedule:
+    - cron: '07 2 * * *' # Beijing time daily 10:07
+  workflow_dispatch: {}
+
+concurrency:
+  group: orbitix-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test isolated Orbitix check-in offline
+        run: python -B tests/test_orbitix_api.py
+      - name: Check in and verify today's exact-date record
+        env:
+          ORBITIX_ACCESS_TOKEN: ${{ secrets.ORBITIX_ACCESS_TOKEN }}
+        run: python -u -B orbitix_checkin.py
