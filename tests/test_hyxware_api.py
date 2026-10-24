@@ -647,19 +647,20 @@ class HyxwareWorkflowTest(unittest.TestCase):
         self.assertNotIn('upload-artifact', workflow)
         self.assertNotIn('pip install', workflow)
 
-    def test_matrix_maps_exactly_two_independent_accounts_to_repository_secret_names(self):
+    def test_matrix_maps_exactly_three_independent_accounts_to_repository_secret_names(self):
         workflow = self.workflow
         self.assertRegex(workflow, r'(?m)^    strategy:\n      fail-fast: false\n      matrix:\n        include:')
-        pairs = re.findall(r'(?m)^          - account: (account[12])\n            secret: (HYXWARE_ACCESS_TOKEN_[12])$', workflow)
+        pairs = re.findall(r'(?m)^          - account: (account[123])\n            secret: (HYXWARE_ACCESS_TOKEN_[123])$', workflow)
         self.assertEqual(pairs, [('account1', 'HYXWARE_ACCESS_TOKEN_1'),
-                                 ('account2', 'HYXWARE_ACCESS_TOKEN_2')])
-        self.assertEqual(len(re.findall(r'(?m)^          - ', workflow)), 2)
+                                 ('account2', 'HYXWARE_ACCESS_TOKEN_2'),
+                                 ('account3', 'HYXWARE_ACCESS_TOKEN_3')])
+        self.assertEqual(len(re.findall(r'(?m)^          - ', workflow)), 3)
         self.assertRegex(workflow, r'(?m)^    name: .*\$\{\{ matrix.account \}\}')
         self.assertEqual(re.findall(r'(?m)^  ([a-zA-Z_][\w-]*):\n(?=    runs-on:)', workflow), ['checkin'])
         self.assertNotIn('max-parallel: 1', workflow)
         self.assertNotIn('needs:', workflow)
         self.assertEqual(re.findall(r'HYXWARE_ACCESS_TOKEN_[0-9]+', workflow),
-                         ['HYXWARE_ACCESS_TOKEN_1', 'HYXWARE_ACCESS_TOKEN_2'])
+                         ['HYXWARE_ACCESS_TOKEN_1', 'HYXWARE_ACCESS_TOKEN_2', 'HYXWARE_ACCESS_TOKEN_3'])
 
     def test_only_checkin_step_receives_selected_secret_and_repository_is_read_only(self):
         workflow = self.workflow
