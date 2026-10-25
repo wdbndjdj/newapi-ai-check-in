@@ -1,4 +1,4 @@
-"""Conservative GitHub-native watchdog for exactly two check-in workflows.
+"""Conservative GitHub-native watchdog for exactly three check-in workflows.
 
 No site API or site credentials are used. A green run alone is not a receipt.
 All probe failures are fail-closed; an uncertain dispatch is never retried here.
@@ -21,7 +21,9 @@ BEIJING = timezone(timedelta(hours=8))
 SITES = {
     'HappyCoding': (373080586, 'happycoding.yml', 9, 57, 'happycoding_checkin.py'),
     'Mofas': (373126098, 'mofas.yml', 10, 7, 'mofas_checkin.py'),
+    'Hyxware': (395129293, 'hyxware.yml', 10, 17, 'hyxware_checkin.py'),
 }
+HYXWARE_ACCOUNTS = frozenset('account' + str(i) for i in range(1, 15))
 ACTIVE = ('queued', 'in_progress', 'waiting', 'pending', 'requested')
 CONCLUSIONS = {'success', 'failure', 'cancelled', 'timed_out', 'action_required',
                'neutral', 'skipped', 'stale', 'startup_failure'}
@@ -80,7 +82,7 @@ class GitHubAPI:
 
     def _request(self, path, *, method='GET', payload=None, raw=False):
         headers = {'Authorization': 'Bearer ' + self.token, 'Accept': 'application/vnd.github+json',
-                   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Two-Site-Checkin-Watchdog'}
+                   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Three-Site-Checkin-Watchdog'}
         data = None if payload is None else json.dumps(payload).encode('utf-8')
         if data is not None:
             headers['Content-Type'] = 'application/json'
@@ -111,7 +113,7 @@ class GitHubAPI:
         if parsed.scheme != 'https' or not trusted or parsed.username or parsed.password or parsed.port not in (None, 443):
             raise ProbeError('untrusted_log_redirect')
         # Never forward Authorization (or other API headers) to the signed URL.
-        request = urllib.request.Request(location, headers={'User-Agent': 'Two-Site-Checkin-Watchdog'})
+        request = urllib.request.Request(location, headers={'User-Agent': 'Three-Site-Checkin-Watchdog'})
         try:
             with self._open(request) as response:
                 body = response.read(MAX_BYTES + 1)
@@ -123,7 +125,7 @@ class GitHubAPI:
 
     @staticmethod
     def _allow(workflow_id):
-        if type(workflow_id) is not int or workflow_id not in (373080586, 373126098):
+        if type(workflow_id) is not int or workflow_id not in (373080586, 373126098, 395129293):
             raise ProbeError('workflow_not_whitelisted')
 
     def workflow(self, workflow_id):
@@ -179,7 +181,10 @@ class GitHubAPI:
 def has_receipt(data, site, day):
     """Accept only actual check-in step output or its bounded full-job region."""
     script = SITES[site][4]
+    hyxware = site == 'Hyxware'
+    command = 'python -u ' + ('-B ' if hyxware else '') + script
     found_source, source_output, found_receipt = False, False, False
+    accounts, account_sources, account_outputs = set(), set(), set()
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             members = archive.infolist()
@@ -193,21 +198,34 @@ def has_receipt(data, site, day):
                 # Reading every member checks CRC, including files not used as evidence.
                 content = archive.read(member).decode('utf-8-sig')
                 name = member.filename.rsplit('/', 1)[-1]
-                step = bool(re.fullmatch(r'\d+_签到并确认今日状态\.txt', name))
-                job = bool(re.fullmatch(r'\d+_checkin\.txt', name))
+                account = None
+                if hyxware:
+                    # Receipts contain no account identifier; bind each one to
+                    # its exact matrix job, never to a count of JSON lines.
+                    step = re.fullmatch(r"Hyxware (account\d+)/\d+_Check in and verify today's exact-date record\.txt", member.filename)
+                    job = re.fullmatch(r'\d+_Hyxware (account\d+)\.txt', member.filename)
+                    source = step or job
+                    if source is None or source[1] not in HYXWARE_ACCOUNTS:
+                        continue
+                    account = source[1]
+                else:
+                    step = bool(re.fullmatch(r'\d+_签到并确认今日状态\.txt', name))
+                    job = bool(re.fullmatch(r'\d+_checkin\.txt', name))
                 if not (step or job):
                     continue
-                in_output = step
+                in_output = bool(step)
                 group = False
                 if step:
                     found_source = True
+                    account_sources.add(account)
                 for line in content.splitlines():
                     line = re.sub(r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z\s+', '', line).strip()
                     if line.startswith('##[group]'):
                         in_output = False
-                        group = line == '##[group]Run python -u ' + script
+                        group = line == '##[group]Run ' + command
                         if group:
                             found_source = True
+                            account_sources.add(account)
                         continue
                     if line == '##[endgroup]':
                         in_output, group = group, False
@@ -218,6 +236,7 @@ def has_receipt(data, site, day):
                         continue
                     if not line.startswith('##['):
                         source_output = True
+                        account_outputs.add(account)
                     if not line.startswith('{'):
                         continue
                     try:
@@ -232,13 +251,24 @@ def has_receipt(data, site, day):
                             datetime.fromisoformat(receipt_day)
                         except ValueError:
                             raise ProbeError('malformed_receipt') from None
+                        if hyxware:
+                            record_day, quota = value.get('record_date'), value.get('quota_awarded')
+                            if (not isinstance(record_day, str) or not re.fullmatch(r'\d{4}-\d\d-\d\d', record_day)
+                                or type(quota) not in (int, float) or not 0 <= quota < float('inf')):
+                                raise ProbeError('malformed_receipt')
+                            try:
+                                datetime.fromisoformat(record_day)
+                            except ValueError:
+                                raise ProbeError('malformed_receipt') from None
+                            if receipt_day == day and record_day == day:
+                                accounts.add(account)
                         if receipt_day == day:
                             found_receipt = True
     except (zipfile.BadZipFile, UnicodeError, RuntimeError, OSError, ValueError):
         raise ProbeError('incomplete_logs') from None
-    if not found_source or not source_output:
+    if not found_source or not source_output or (hyxware and account_sources - account_outputs):
         raise ProbeError('checkin_log_unavailable')
-    return found_receipt
+    return accounts == HYXWARE_ACCOUNTS if hyxware else found_receipt
 
 
 class Watchdog:

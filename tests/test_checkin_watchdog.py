@@ -19,6 +19,8 @@ if pathlib.Path(spec.origin).exists():
 UTC = timezone.utc
 DATE = datetime(2026, 10, 12, 2, 30, tzinfo=UTC)
 SHA = 'a' * 40
+HYXWARE_NOW = datetime(2026, 10, 12, 3, 30, tzinfo=UTC)
+HYXWARE_STEP = "5_Check in and verify today's exact-date record.txt"
 
 
 def archive(receipt=None, source='checkin/3_签到并确认今日状态.txt', text=None):
@@ -31,6 +33,20 @@ def archive(receipt=None, source='checkin/3_签到并确认今日状态.txt', te
 
 def receipt(site='HappyCoding', date='2026-10-12', result='checked_in'):
     return {'site': site, 'date': date, 'result': result}
+
+
+def hyxware_members():
+    # The receipt has no account field: identity comes from the matrix job name.
+    value = {**receipt('Hyxware'), 'record_date': '2026-10-12', 'quota_awarded': 1000}
+    return {f'Hyxware account{i}/{HYXWARE_STEP}': json.dumps(value) for i in range(1, 15)}
+
+
+def member_archive(members):
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, 'w') as output:
+        for source, content in members.items():
+            output.writestr(source, '2026-10-12T02:30:00.1234567Z ' + content + '\n')
+    return stream.getvalue()
 
 
 def run(run_id=1, **changes):
@@ -64,7 +80,7 @@ class FakeAPI:
         self.refresh_runs = None
     def workflow(self, workflow_id):
         self.calls.append(('workflow', workflow_id))
-        name = 'happycoding' if workflow_id == 373080586 else 'mofas'
+        name = {373080586: 'happycoding', 373126098: 'mofas', 395129293: 'hyxware'}[workflow_id]
         return {'id': workflow_id, 'path': '.github/workflows/' + name + '.yml', 'state': 'active'}
     def list_runs(self, workflow_id, *, since=None, status=None):
         self.calls.append(('list', workflow_id, since, status))
@@ -173,7 +189,7 @@ class WatchdogTests(unittest.TestCase):
     def test_probe_error_is_isolated_per_site(self):
         api = FakeAPI([run()], {1: OSError('private')})
         summary = app.Watchdog(api, now=self.clock.now, sleep=self.clock.sleep, wait_seconds=0).run()
-        self.assertEqual([s['status'] for s in summary['sites']], ['unknown', 'pending'])
+        self.assertEqual([s['status'] for s in summary['sites']], ['unknown', 'pending', 'not_due'])
         self.assertEqual(api.posts, [(373126098, 'main')])
     def test_failure_cooldown_exact_boundary(self):
         for updated, expected in [('2026-10-12T01:30:01Z', 'cooldown'), ('2026-10-12T01:30:00Z', 'pending')]:
@@ -244,6 +260,185 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(api.posts, [])
 
 
+class HyxwareWatchdogTests(unittest.TestCase):
+    def setUp(self):
+        self.clock = Clock()
+
+    def check(self, api, wait=0):
+        return app.Watchdog(api, now=self.clock.now, sleep=self.clock.sleep,
+                            wait_seconds=wait).check_site('Hyxware')
+
+    def api(self, members=None, **changes):
+        return FakeAPI([run(workflow_id=395129293, **changes)],
+                       {1: member_archive(hyxware_members() if members is None else members)},
+                       server_time=HYXWARE_NOW)
+
+    def test_hyxware_due_only_at_1032_beijing(self):
+        before = FakeAPI(server_time=datetime(2026, 10, 12, 2, 31, 59, tzinfo=UTC))
+        self.assertEqual(self.check(before)['status'], 'not_due')
+        self.assertEqual(before.posts, [])
+        due = FakeAPI(server_time=datetime(2026, 10, 12, 2, 32, tzinfo=UTC))
+        result = self.check(due)
+        self.assertEqual(result['status'], 'pending')
+        self.assertEqual(result['eligible_at'], '2026-10-12T10:32:00+08:00')
+        self.assertEqual(due.posts, [(395129293, 'main')])
+
+    def test_all_14_today_receipts_are_healthy_even_if_run_failed(self):
+        for state in ('checked_in', 'already_checked_in'):
+            with self.subTest(state=state):
+                members = {name: text.replace('"checked_in"', json.dumps(state))
+                           for name, text in hyxware_members().items()}
+                api = self.api(members, conclusion='failure')
+                self.assertEqual(self.check(api)['status'], 'healthy')
+                self.assertEqual(api.posts, [])
+
+    def test_one_or_13_receipts_cannot_cover_14_accounts(self):
+        for count in (1, 13):
+            with self.subTest(count=count):
+                members = dict(list(hyxware_members().items())[:count])
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'pending')
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_repeated_receipts_for_one_account_do_not_count_as_14(self):
+        name, text = next(iter(hyxware_members().items()))
+        api = self.api({name: '\n'.join([text] * 14)})
+        self.assertEqual(self.check(api)['status'], 'pending')
+        self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_full_job_and_step_duplicate_cannot_replace_missing_account(self):
+        members = hyxware_members()
+        members.pop(f'Hyxware account14/{HYXWARE_STEP}')
+        text = members[f'Hyxware account1/{HYXWARE_STEP}']
+        members['0_Hyxware account1.txt'] = '\n'.join([
+            '##[group]Run python -u -B hyxware_checkin.py', '##[endgroup]', text])
+        api = self.api(members)
+        self.assertEqual(self.check(api)['status'], 'pending')
+        self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_wrong_date_or_site_receipt_cannot_complete_matrix(self):
+        for changes in ({'date': '2026-10-11', 'record_date': '2026-10-11'},
+                        {'record_date': '2026-10-11'}, {'date': '2026-10-11'},
+                        {'site': 'HappyCoding'}):
+            with self.subTest(changes=changes):
+                members = hyxware_members()
+                name = f'Hyxware account14/{HYXWARE_STEP}'
+                members[name] = json.dumps({**json.loads(members[name]), **changes})
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'pending')
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_wrong_account_log_cannot_complete_matrix(self):
+        for account in ('account15', 'account014', 'account1', 'other'):
+            with self.subTest(account=account):
+                members = hyxware_members()
+                text = members.pop(f'Hyxware account14/{HYXWARE_STEP}')
+                members[f'Hyxware {account}/6_Check in and verify today\'s exact-date record.txt'] = text
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'pending')
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_test_step_or_echoed_json_cannot_complete_matrix(self):
+        for source, prefix in [('4_Test isolated Hyxware check-in offline.txt', ''),
+                               (HYXWARE_STEP, 'echo ')]:
+            with self.subTest(source=source, prefix=prefix):
+                members = hyxware_members()
+                text = members.pop(f'Hyxware account14/{HYXWARE_STEP}')
+                members[f'Hyxware account14/{source}'] = prefix + text
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'pending')
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_malformed_hyxware_receipt_fails_closed(self):
+        for changes in ({'record_date': None}, {'record_date': '2026-02-30'},
+                        {'quota_awarded': None}, {'quota_awarded': -1},
+                        {'quota_awarded': True}, {'quota_awarded': float('nan')},
+                        {'quota_awarded': float('inf')}, {'result': 'success'}):
+            with self.subTest(changes=changes):
+                members = hyxware_members()
+                name = f'Hyxware account14/{HYXWARE_STEP}'
+                members[name] = json.dumps({**json.loads(members[name]), **changes})
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'unknown')
+                self.assertEqual(api.posts, [])
+
+    def test_whole_jobs_accept_only_hyxware_command_output(self):
+        members = {}
+        for index, text in enumerate(hyxware_members().values(), 1):
+            members[f'{index}_Hyxware account{index}.txt'] = '\n'.join([
+                '##[group]Run python -B tests/test_hyxware_api.py', '##[endgroup]', text,
+                '##[group]Run python -u -B hyxware_checkin.py',
+                'python -u -B hyxware_checkin.py', '##[endgroup]',
+                text if index != 14 else text.replace('2026-10-12', '2026-10-11'),
+                '##[group]Post job cleanup', '##[endgroup]', text])
+        api = self.api(members)
+        self.assertEqual(self.check(api)['status'], 'pending')
+        members['14_Hyxware account14.txt'] = members['14_Hyxware account14.txt'].replace(
+            '2026-10-11', '2026-10-12')
+        api = self.api(members)
+        self.assertEqual(self.check(api)['status'], 'healthy')
+        self.assertEqual(api.posts, [])
+
+    def test_receipts_are_not_pooled_across_different_runs(self):
+        members = list(hyxware_members().items())
+        api = FakeAPI([run(i, workflow_id=395129293) for i in (1, 2)],
+                      {1: member_archive(dict(members[:7])), 2: member_archive(dict(members[7:]))},
+                      server_time=HYXWARE_NOW)
+        self.assertEqual(self.check(api)['status'], 'pending')
+        self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_hyxware_unavailable_logs_fail_closed(self):
+        for data in (b'', b'PK\x03\x04truncated', archive(source='tests.txt'), OSError('SECRET')):
+            with self.subTest(data=type(data)):
+                api = self.api()
+                api.log_data[1] = data
+                result = self.check(api)
+                self.assertEqual(result['status'], 'unknown')
+                self.assertNotIn('SECRET', json.dumps(result))
+                self.assertEqual(api.posts, [])
+
+    def test_empty_account_step_fails_closed_even_with_13_valid_receipts(self):
+        members = hyxware_members()
+        members[f'Hyxware account14/{HYXWARE_STEP}'] = ''
+        api = self.api(members)
+        self.assertEqual(self.check(api)['status'], 'unknown')
+        self.assertEqual(api.posts, [])
+
+    def test_dispatched_run_verification_also_requires_all_14_receipts(self):
+        for count, expected in ((13, 'failed'), (14, 'verified')):
+            with self.subTest(count=count):
+                api = FakeAPI(server_time=HYXWARE_NOW)
+                api.new_runs = [run(2, workflow_id=395129293, event='workflow_dispatch',
+                                    created_at='2026-10-12T03:30:00Z')]
+                api.log_data[2] = member_archive(dict(list(hyxware_members().items())[:count]))
+                result = self.check(api, wait=240)
+                self.assertEqual(result['status'], expected)
+                self.assertEqual(result['receipt_verified'], count == 14)
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_hyxware_active_cooldown_and_two_retry_limit_are_preserved(self):
+        cases = [([run(workflow_id=395129293, status='queued', conclusion=None)], 'active'),
+                 ([run(workflow_id=395129293, conclusion='failure',
+                       updated_at='2026-10-12T03:00:00Z')], 'cooldown'),
+                 ([run(i, workflow_id=395129293, event='workflow_dispatch') for i in (1, 2)], 'limit')]
+        members = dict(list(hyxware_members().items())[:13])
+        for runs, expected in cases:
+            with self.subTest(expected=expected):
+                api = FakeAPI(runs, {r['id']: member_archive(members) for r in runs},
+                              server_time=HYXWARE_NOW)
+                self.assertEqual(self.check(api)['status'], expected)
+                self.assertEqual(api.posts, [])
+
+    def test_all_three_sites_can_be_healthy_without_dispatch(self):
+        api = FakeAPI([run(1), run(2, workflow_id=373126098), run(3, workflow_id=395129293)],
+                      {1: archive(receipt()), 2: archive(receipt('Mofas')),
+                       3: member_archive(hyxware_members())}, server_time=HYXWARE_NOW)
+        summary = app.Watchdog(api, wait_seconds=0).run()
+        self.assertEqual([(s['site'], s['status']) for s in summary['sites']],
+                         [('HappyCoding', 'healthy'), ('Mofas', 'healthy'), ('Hyxware', 'healthy')])
+        self.assertEqual(api.posts, [])
+
+
 class Response(io.BytesIO):
     def __init__(self, data, headers=None, status=200):
         super().__init__(data)
@@ -290,9 +485,21 @@ class APITests(unittest.TestCase):
         self.assertEqual(len(self.requests), 1)
     def test_client_rejects_nonwhitelisted_dispatch(self):
         api = self.client([])
-        with self.assertRaises(app.ProbeError):
-            api.dispatch(999)
+        for workflow_id in (999, True, '395129293', 395129293.0):
+            with self.subTest(workflow_id=workflow_id), self.assertRaises(app.ProbeError):
+                api.dispatch(workflow_id)
         self.assertEqual(self.requests, [])
+    def test_client_dispatches_only_the_three_checkin_workflows(self):
+        for workflow_id in (373080586, 373126098, 395129293):
+            with self.subTest(workflow_id=workflow_id):
+                api = self.client([Response(b'', status=204)])
+                try:
+                    api.dispatch(workflow_id)
+                except app.ProbeError as error:
+                    self.fail(f'check-in workflow rejected: {error}')
+                self.assertEqual(self.requests[0].full_url,
+                                 api.base + f'/actions/workflows/{workflow_id}/dispatches')
+                self.assertEqual(json.loads(self.requests[0].data), {'ref': 'main'})
     def test_api_error_never_leaks_body_or_token(self):
         error = urllib.error.HTTPError('https://api.github.com/', 403, 'SECRET', {}, io.BytesIO(b'SECRET'))
         api = self.client([error])

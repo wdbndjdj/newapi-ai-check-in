@@ -1,4 +1,4 @@
-name: HappyCoding and Mofas check-in watchdog
+name: HappyCoding, Mofas and Hyxware check-in watchdog
 
 on:
   schedule:
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   watchdog:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15 # Three sequential waits of up to four minutes, plus setup/probes.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,5 +31,5 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         # workflow_dispatch is the GITHUB_TOKEN recursion-prevention exception.
-        # Site tokens remain exclusively in the two existing child workflows.
+        # Site tokens remain exclusively in the three existing child workflows.
         run: python -B scripts/checkin_watchdog.py --wait-seconds 240
