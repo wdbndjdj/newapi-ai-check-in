@@ -23,7 +23,7 @@ SITES = {
     'Mofas': (373126098, 'mofas.yml', 10, 7, 'mofas_checkin.py'),
     'Hyxware': (395129293, 'hyxware.yml', 10, 17, 'hyxware_checkin.py'),
 }
-HYXWARE_ACCOUNTS = frozenset('account' + str(i) for i in range(1, 15))
+HYXWARE_ACCOUNTS = frozenset('account' + str(i) for i in range(1, 16))
 ACTIVE = ('queued', 'in_progress', 'waiting', 'pending', 'requested')
 CONCLUSIONS = {'success', 'failure', 'cancelled', 'timed_out', 'action_required',
                'neutral', 'skipped', 'stale', 'startup_failure'}

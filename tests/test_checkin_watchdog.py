@@ -38,7 +38,7 @@ def receipt(site='HappyCoding', date='2026-10-12', result='checked_in'):
 def hyxware_members():
     # The receipt has no account field: identity comes from the matrix job name.
     value = {**receipt('Hyxware'), 'record_date': '2026-10-12', 'quota_awarded': 1000}
-    return {f'Hyxware account{i}/{HYXWARE_STEP}': json.dumps(value) for i in range(1, 15)}
+    return {f'Hyxware account{i}/{HYXWARE_STEP}': json.dumps(value) for i in range(1, 16)}
 
 
 def member_archive(members):
@@ -283,7 +283,7 @@ class HyxwareWatchdogTests(unittest.TestCase):
         self.assertEqual(result['eligible_at'], '2026-10-12T10:32:00+08:00')
         self.assertEqual(due.posts, [(395129293, 'main')])
 
-    def test_all_14_today_receipts_are_healthy_even_if_run_failed(self):
+    def test_all_15_today_receipts_are_healthy_even_if_run_failed(self):
         for state in ('checked_in', 'already_checked_in'):
             with self.subTest(state=state):
                 members = {name: text.replace('"checked_in"', json.dumps(state))
@@ -292,23 +292,39 @@ class HyxwareWatchdogTests(unittest.TestCase):
                 self.assertEqual(self.check(api)['status'], 'healthy')
                 self.assertEqual(api.posts, [])
 
-    def test_one_or_13_receipts_cannot_cover_14_accounts(self):
-        for count in (1, 13):
+    def test_partial_receipts_cannot_cover_15_accounts(self):
+        for count in (1, 13, 14):
             with self.subTest(count=count):
                 members = dict(list(hyxware_members().items())[:count])
                 api = self.api(members)
                 self.assertEqual(self.check(api)['status'], 'pending')
                 self.assertEqual(api.posts, [(395129293, 'main')])
 
-    def test_repeated_receipts_for_one_account_do_not_count_as_14(self):
+    def test_old_14_account_receipts_are_incomplete(self):
+        members = {name: text for name, text in hyxware_members().items()
+                   if name != f'Hyxware account15/{HYXWARE_STEP}'}
+        api = self.api(members)
+        self.assertEqual(self.check(api)['status'], 'pending')
+        self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_each_of_the_15_accounts_is_required(self):
+        for index in range(1, 16):
+            with self.subTest(missing=f'account{index}'):
+                members = hyxware_members()
+                members.pop(f'Hyxware account{index}/{HYXWARE_STEP}')
+                api = self.api(members)
+                self.assertEqual(self.check(api)['status'], 'pending')
+                self.assertEqual(api.posts, [(395129293, 'main')])
+
+    def test_repeated_receipts_for_one_account_do_not_count_as_15(self):
         name, text = next(iter(hyxware_members().items()))
-        api = self.api({name: '\n'.join([text] * 14)})
+        api = self.api({name: '\n'.join([text] * 15)})
         self.assertEqual(self.check(api)['status'], 'pending')
         self.assertEqual(api.posts, [(395129293, 'main')])
 
     def test_full_job_and_step_duplicate_cannot_replace_missing_account(self):
         members = hyxware_members()
-        members.pop(f'Hyxware account14/{HYXWARE_STEP}')
+        members.pop(f'Hyxware account15/{HYXWARE_STEP}')
         text = members[f'Hyxware account1/{HYXWARE_STEP}']
         members['0_Hyxware account1.txt'] = '\n'.join([
             '##[group]Run python -u -B hyxware_checkin.py', '##[endgroup]', text])
@@ -322,17 +338,17 @@ class HyxwareWatchdogTests(unittest.TestCase):
                         {'site': 'HappyCoding'}):
             with self.subTest(changes=changes):
                 members = hyxware_members()
-                name = f'Hyxware account14/{HYXWARE_STEP}'
+                name = f'Hyxware account15/{HYXWARE_STEP}'
                 members[name] = json.dumps({**json.loads(members[name]), **changes})
                 api = self.api(members)
                 self.assertEqual(self.check(api)['status'], 'pending')
                 self.assertEqual(api.posts, [(395129293, 'main')])
 
     def test_wrong_account_log_cannot_complete_matrix(self):
-        for account in ('account15', 'account014', 'account1', 'other'):
+        for account in ('account16', 'account015', 'account1', 'other'):
             with self.subTest(account=account):
                 members = hyxware_members()
-                text = members.pop(f'Hyxware account14/{HYXWARE_STEP}')
+                text = members.pop(f'Hyxware account15/{HYXWARE_STEP}')
                 members[f'Hyxware {account}/6_Check in and verify today\'s exact-date record.txt'] = text
                 api = self.api(members)
                 self.assertEqual(self.check(api)['status'], 'pending')
@@ -343,8 +359,8 @@ class HyxwareWatchdogTests(unittest.TestCase):
                                (HYXWARE_STEP, 'echo ')]:
             with self.subTest(source=source, prefix=prefix):
                 members = hyxware_members()
-                text = members.pop(f'Hyxware account14/{HYXWARE_STEP}')
-                members[f'Hyxware account14/{source}'] = prefix + text
+                text = members.pop(f'Hyxware account15/{HYXWARE_STEP}')
+                members[f'Hyxware account15/{source}'] = prefix + text
                 api = self.api(members)
                 self.assertEqual(self.check(api)['status'], 'pending')
                 self.assertEqual(api.posts, [(395129293, 'main')])
@@ -356,7 +372,7 @@ class HyxwareWatchdogTests(unittest.TestCase):
                         {'quota_awarded': float('inf')}, {'result': 'success'}):
             with self.subTest(changes=changes):
                 members = hyxware_members()
-                name = f'Hyxware account14/{HYXWARE_STEP}'
+                name = f'Hyxware account15/{HYXWARE_STEP}'
                 members[name] = json.dumps({**json.loads(members[name]), **changes})
                 api = self.api(members)
                 self.assertEqual(self.check(api)['status'], 'unknown')
@@ -369,11 +385,11 @@ class HyxwareWatchdogTests(unittest.TestCase):
                 '##[group]Run python -B tests/test_hyxware_api.py', '##[endgroup]', text,
                 '##[group]Run python -u -B hyxware_checkin.py',
                 'python -u -B hyxware_checkin.py', '##[endgroup]',
-                text if index != 14 else text.replace('2026-10-12', '2026-10-11'),
+                text if index != 15 else text.replace('2026-10-12', '2026-10-11'),
                 '##[group]Post job cleanup', '##[endgroup]', text])
         api = self.api(members)
         self.assertEqual(self.check(api)['status'], 'pending')
-        members['14_Hyxware account14.txt'] = members['14_Hyxware account14.txt'].replace(
+        members['15_Hyxware account15.txt'] = members['15_Hyxware account15.txt'].replace(
             '2026-10-11', '2026-10-12')
         api = self.api(members)
         self.assertEqual(self.check(api)['status'], 'healthy')
@@ -397,15 +413,15 @@ class HyxwareWatchdogTests(unittest.TestCase):
                 self.assertNotIn('SECRET', json.dumps(result))
                 self.assertEqual(api.posts, [])
 
-    def test_empty_account_step_fails_closed_even_with_13_valid_receipts(self):
+    def test_empty_account_step_fails_closed_even_with_14_valid_receipts(self):
         members = hyxware_members()
-        members[f'Hyxware account14/{HYXWARE_STEP}'] = ''
+        members[f'Hyxware account15/{HYXWARE_STEP}'] = ''
         api = self.api(members)
         self.assertEqual(self.check(api)['status'], 'unknown')
         self.assertEqual(api.posts, [])
 
-    def test_dispatched_run_verification_also_requires_all_14_receipts(self):
-        for count, expected in ((13, 'failed'), (14, 'verified')):
+    def test_dispatched_run_verification_also_requires_all_15_receipts(self):
+        for count, expected in ((13, 'failed'), (14, 'failed'), (15, 'verified')):
             with self.subTest(count=count):
                 api = FakeAPI(server_time=HYXWARE_NOW)
                 api.new_runs = [run(2, workflow_id=395129293, event='workflow_dispatch',
@@ -413,7 +429,7 @@ class HyxwareWatchdogTests(unittest.TestCase):
                 api.log_data[2] = member_archive(dict(list(hyxware_members().items())[:count]))
                 result = self.check(api, wait=240)
                 self.assertEqual(result['status'], expected)
-                self.assertEqual(result['receipt_verified'], count == 14)
+                self.assertEqual(result['receipt_verified'], count == 15)
                 self.assertEqual(api.posts, [(395129293, 'main')])
 
     def test_hyxware_active_cooldown_and_two_retry_limit_are_preserved(self):
@@ -421,7 +437,7 @@ class HyxwareWatchdogTests(unittest.TestCase):
                  ([run(workflow_id=395129293, conclusion='failure',
                        updated_at='2026-10-12T03:00:00Z')], 'cooldown'),
                  ([run(i, workflow_id=395129293, event='workflow_dispatch') for i in (1, 2)], 'limit')]
-        members = dict(list(hyxware_members().items())[:13])
+        members = dict(list(hyxware_members().items())[:14])
         for runs, expected in cases:
             with self.subTest(expected=expected):
                 api = FakeAPI(runs, {r['id']: member_archive(members) for r in runs},
