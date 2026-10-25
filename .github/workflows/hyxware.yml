@@ -51,6 +51,24 @@ jobs:
             secret: HYXWARE_ACCESS_TOKEN_14
           - account: account15
             secret: HYXWARE_ACCESS_TOKEN_15
+          - account: account16
+            secret: HYXWARE_ACCESS_TOKEN_16
+          - account: account17
+            secret: HYXWARE_ACCESS_TOKEN_17
+          - account: account18
+            secret: HYXWARE_ACCESS_TOKEN_18
+          - account: account19
+            secret: HYXWARE_ACCESS_TOKEN_19
+          - account: account20
+            secret: HYXWARE_ACCESS_TOKEN_20
+          - account: account21
+            secret: HYXWARE_ACCESS_TOKEN_21
+          - account: account22
+            secret: HYXWARE_ACCESS_TOKEN_22
+          - account: account23
+            secret: HYXWARE_ACCESS_TOKEN_23
+          - account: account24
+            secret: HYXWARE_ACCESS_TOKEN_24
     steps:
       - uses: actions/checkout@v5
         with:

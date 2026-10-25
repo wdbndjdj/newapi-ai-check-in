@@ -23,7 +23,7 @@ SITES = {
     'Mofas': (373126098, 'mofas.yml', 10, 7, 'mofas_checkin.py'),
     'Hyxware': (395129293, 'hyxware.yml', 10, 17, 'hyxware_checkin.py'),
 }
-HYXWARE_ACCOUNTS = frozenset('account' + str(i) for i in range(1, 16))
+HYXWARE_ACCOUNTS = frozenset('account' + str(i) for i in range(1, 25))
 ACTIVE = ('queued', 'in_progress', 'waiting', 'pending', 'requested')
 CONCLUSIONS = {'success', 'failure', 'cancelled', 'timed_out', 'action_required',
                'neutral', 'skipped', 'stale', 'startup_failure'}
@@ -188,7 +188,8 @@ def has_receipt(data, site, day):
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             members = archive.infolist()
-            if not members or len(members) > 200 or sum(m.file_size for m in members) > MAX_BYTES:
+            member_limit = max(200, 12 * len(HYXWARE_ACCOUNTS)) if hyxware else 200
+            if not members or len(members) > member_limit or sum(m.file_size for m in members) > MAX_BYTES:
                 raise ProbeError('incomplete_logs')
             for member in members:
                 if member.is_dir():
