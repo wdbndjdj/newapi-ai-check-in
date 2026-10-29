@@ -1,0 +1,33 @@
+name: Akmusi AI daily check-in
+
+on:
+  schedule:
+    - cron: '07 2 * * *' # Beijing time daily 10:07
+  workflow_dispatch: {}
+
+concurrency:
+  group: akmusi-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Test New API check-in offline
+        run: |
+          python -B tests/test_orbitix_api.py
+          python -B tests/test_akmusi_api.py
+      - name: Check in and verify today's exact-date record
+        env:
+          AKMUSI_ACCESS_TOKEN: ${{ secrets.AKMUSI_ACCESS_TOKEN }}
+        run: python -u -B akmusi_checkin.py

@@ -1,8 +1,8 @@
 """Isolated Orbitix check-in. Standard library only; never logs API bodies.
 
-Only ORBITIX_ACCESS_TOKEN supplies credentials. Dates use Beijing time, as does
-the daily workflow. Midnight crossings fail closed: rerun to query the new day.
-No redirects, challenge solving, cookies, automatic POST retries, or other sites.
+Each allowlisted site has a dedicated access-token environment variable. Dates
+use Beijing time, as does the daily workflow. Midnight crossings fail closed:
+rerun to query the new day. No redirects, challenge solving, or cookies.
 """
 
 import json
@@ -14,7 +14,26 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-ORIGIN = 'https://new.orbitix.site'
+SITE_PROFILES = {
+    'orbitix': {
+        'name': 'Orbitix',
+        'origin': 'https://new.orbitix.site',
+        'token_env': 'ORBITIX_ACCESS_TOKEN',
+        'user_agent': 'Orbitix-Daily-Checkin/1.0',
+    },
+    'akmusi': {
+        'name': 'Akmusi AI',
+        'origin': 'https://ai.akmusi.online',
+        'token_env': 'AKMUSI_ACCESS_TOKEN',
+        'user_agent': 'Akmusi-AI-Daily-Checkin/1.0',
+    },
+}
+DEFAULT_PROFILE = 'orbitix'
+PROFILE = DEFAULT_PROFILE
+ORIGIN = SITE_PROFILES[PROFILE]['origin']
+SITE_NAME = SITE_PROFILES[PROFILE]['name']
+TOKEN_ENV = SITE_PROFILES[PROFILE]['token_env']
+USER_AGENT = SITE_PROFILES[PROFILE]['user_agent']
 BEIJING = timezone(timedelta(hours=8))
 MAX_RESPONSE_BYTES = 1024 * 1024
 ERROR_MESSAGES = {
@@ -38,7 +57,23 @@ class CheckinError(RuntimeError):
 
     def __init__(self, code):
         self.code = code if code in ERROR_MESSAGES else 'internal'
-        super().__init__(ERROR_MESSAGES[self.code])
+        super().__init__(site_message(self.code))
+
+
+def site_message(code):
+    return ERROR_MESSAGES.get(code, ERROR_MESSAGES['internal']).replace('Orbitix', SITE_NAME)
+
+
+def configure_profile(profile):
+    configuration = SITE_PROFILES.get(profile)
+    if configuration is None:
+        raise CheckinError('origin')
+    global PROFILE, ORIGIN, SITE_NAME, TOKEN_ENV, USER_AGENT
+    PROFILE = profile
+    ORIGIN = configuration['origin']
+    SITE_NAME = configuration['name']
+    TOKEN_ENV = configuration['token_env']
+    USER_AGENT = configuration['user_agent']
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -58,7 +93,8 @@ def validated_token(token):
 
 def validated_endpoint(path, method):
     # Exact allowlisting also excludes userinfo, ports, fragments and URL joins.
-    if ORIGIN != 'https://new.orbitix.site' or method not in ('GET', 'POST'):
+    profile = SITE_PROFILES.get(PROFILE)
+    if profile is None or ORIGIN != profile['origin'] or method not in ('GET', 'POST'):
         raise CheckinError('origin')
     if path in ('/api/user/self', '/api/user/checkin'):
         if method == 'POST' and path != '/api/user/checkin':
@@ -89,7 +125,7 @@ def request_json(path, token, *, method='GET', user_id=None):
     if user_id is not None and (type(user_id) is not int or user_id <= 0):
         raise CheckinError('schema')
     headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json',
-               'User-Agent': 'Orbitix-Daily-Checkin/1.0'}
+               'User-Agent': USER_AGENT}
     if user_id is not None:
         headers['New-Api-User'] = str(user_id)
     payload = None
@@ -203,7 +239,7 @@ def checkin(token):
         if record is None:
             raise CheckinError('verification')
         state = 'checked_in'
-    return {'site': 'Orbitix', 'date': day, 'record_date': record['checkin_date'],
+    return {'site': SITE_NAME, 'date': day, 'record_date': record['checkin_date'],
             'result': state, 'quota_awarded': record['quota_awarded']}
 
 
@@ -212,10 +248,10 @@ def write_summary(result=None, error_code='internal'):
     if not path:
         return
     if result is None:
-        message = ERROR_MESSAGES.get(error_code, ERROR_MESSAGES['internal'])
-        text = '## Orbitix daily check-in\n\nResult: **failed**\n\n' + message + '\n'
+        message = site_message(error_code)
+        text = f'## {SITE_NAME} daily check-in\n\nResult: **failed**\n\n' + message + '\n'
     else:
-        text = ('## Orbitix daily check-in\n\n'
+        text = (f'## {SITE_NAME} daily check-in\n\n'
                 f"Result: **{result['result']}**\n\n"
                 f"Beijing date: {result['date']}\n\n"
                 f"Verified record date: {result['record_date']}\n\n"
@@ -224,12 +260,12 @@ def write_summary(result=None, error_code='internal'):
         with open(path, 'a', encoding='utf-8') as summary:
             summary.write(text)
     except OSError:
-        print('Orbitix step summary unavailable', file=sys.stderr)
+        print(f'{SITE_NAME} step summary unavailable', file=sys.stderr)
 
 
-def main():
+def _run_main():
     try:
-        token = validated_token(os.environ.get('ORBITIX_ACCESS_TOKEN', ''))
+        token = validated_token(os.environ.get(TOKEN_ENV, ''))
         if os.environ.get('GITHUB_ACTIONS') == 'true':
             masked = token.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
             print('::add-mask::' + masked, flush=True)
@@ -239,12 +275,22 @@ def main():
             raise CheckinError('verification')
     except Exception as error:
         code = error.code if isinstance(error, CheckinError) else 'internal'
-        print(ERROR_MESSAGES[code], file=sys.stderr)
+        print(site_message(code), file=sys.stderr)
         write_summary(error_code=code)
         return 1
     write_summary(result)
     print(json.dumps(result, ensure_ascii=True, allow_nan=False))
     return 0
+
+
+def main(profile=DEFAULT_PROFILE):
+    global PROFILE, ORIGIN, SITE_NAME, TOKEN_ENV, USER_AGENT
+    previous = (PROFILE, ORIGIN, SITE_NAME, TOKEN_ENV, USER_AGENT)
+    try:
+        configure_profile(profile)
+        return _run_main()
+    finally:
+        PROFILE, ORIGIN, SITE_NAME, TOKEN_ENV, USER_AGENT = previous
 
 
 if __name__ == '__main__':
