@@ -25,9 +25,16 @@ jobs:
         with:
           python-version: '3.11'
       - name: Offline tests
+        id: offline_tests
         run: python -B tests/test_chatflows_checkin.py
-      - name: Check in and verify
+      - name: Check in and verify account 1
         env:
           CHATFLOWS_EMAIL: ${{ secrets.CHATFLOWS_EMAIL }}
           CHATFLOWS_PASSWORD: ${{ secrets.CHATFLOWS_PASSWORD }}
+        run: python -u -B chatflows_checkin.py
+      - name: Check in and verify account 2
+        if: ${{ !cancelled() && steps.offline_tests.outcome == 'success' }}
+        env:
+          CHATFLOWS_EMAIL: ${{ secrets.CHATFLOWS_EMAIL_2 }}
+          CHATFLOWS_PASSWORD: ${{ secrets.CHATFLOWS_PASSWORD_2 }}
         run: python -u -B chatflows_checkin.py
