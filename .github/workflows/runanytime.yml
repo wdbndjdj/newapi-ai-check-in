@@ -1,0 +1,33 @@
+name: RunAnytime daily check-in
+
+on:
+  schedule:
+    - cron: '37 2 * * *' # 10:37 Asia/Shanghai
+  workflow_dispatch: {}
+
+concurrency:
+  group: runanytime-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Run offline tests
+        run: |
+          python -B tests/test_orbitix_api.py
+          python -B tests/test_runanytime.py
+      - name: Check in and verify
+        env:
+          RUNANYTIME_ACCESS_TOKEN: ${{ secrets.RUNANYTIME_ACCESS_TOKEN }}
+        run: python -u -B runanytime_checkin.py
