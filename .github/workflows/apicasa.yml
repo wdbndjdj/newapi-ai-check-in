@@ -1,0 +1,43 @@
+name: APIKey Casa daily check-in
+
+on:
+  schedule:
+    - cron: '31 3 * * *' # 11:31 Asia/Shanghai
+  workflow_dispatch: {}
+
+concurrency:
+  group: apicasa-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    name: Casa ${{ matrix.account }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - account: account1
+            email_secret: APICASA_EMAIL_1
+            password_secret: APICASA_PASSWORD_1
+          - account: account2
+            email_secret: APICASA_EMAIL_2
+            password_secret: APICASA_PASSWORD_2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Offline tests
+        run: python -B tests/test_apicasa_checkin.py
+      - name: Check in and verify
+        env:
+          APICASA_EMAIL: ${{ secrets[matrix.email_secret] }}
+          APICASA_PASSWORD: ${{ secrets[matrix.password_secret] }}
+        run: python -u -B apicasa_checkin.py
